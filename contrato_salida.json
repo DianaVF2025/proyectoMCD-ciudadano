@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Orientación de vacantes OPEC",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["opec", "descripcion", "indice_compatibilidad", "orientacion", "ruta_evaluada", "brecha_meses_experiencia", "advertencia"]
+  }
+}
