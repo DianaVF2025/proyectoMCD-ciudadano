@@ -18,11 +18,8 @@ BASE_DIR = Path(__file__).resolve().parent
 
 @st.cache_resource
 def cargar_motor():
-    return MotorRecomendacionCNSC(
-        ruta_paquete=BASE_DIR / "paquete_modelo_cnsc_v1.joblib",
-        ruta_catalogo=BASE_DIR / "catalogo_opec_prototipo.joblib",
-        ruta_metadata=BASE_DIR / "metadata_modelo.json",
-    )
+    """Carga únicamente el paquete congelado aprobado para inferencia."""
+    return MotorRecomendacionCNSC(BASE_DIR / "paquete_modelo_cnsc_v1.joblib")
 
 
 def nueva_formacion():
@@ -50,29 +47,26 @@ def inicializar_estado():
 def render_formaciones():
     st.subheader("1. Formación académica")
     st.caption("Registre al menos una formación. Puede agregar varias.")
-    niveles = ["BACHILLER", "TECNICO", "TECNOLOGO", "PROFESIONAL", "ESPECIALIZACION", "MAESTRIA", "DOCTORADO"]
+    niveles = [
+        "BACHILLER", "TECNICO PROFESIONAL", "TECNOLOGICO", "PROFESIONAL",
+        "ESPECIALIZACION PROFESIONAL", "MAESTRIA", "DOCTORADO"
+    ]
 
     for i, formacion in enumerate(st.session_state.formaciones):
         with st.container(border=True):
             c1, c2 = st.columns([1, 2])
             nivel_actual = formacion.get("nivel", "PROFESIONAL")
             indice = niveles.index(nivel_actual) if nivel_actual in niveles else niveles.index("PROFESIONAL")
-            formacion["nivel"] = c1.selectbox(
-                "Nivel",
-                niveles,
-                index=indice,
-                key=f"nivel_{i}",
-            )
+            formacion["nivel"] = c1.selectbox("Nivel", niveles, index=indice, key=f"nivel_{i}")
             formacion["titulo"] = c2.text_input(
                 "Título / programa",
                 value=formacion.get("titulo", ""),
                 placeholder="Ej. Ingeniería Industrial",
                 key=f"titulo_{i}",
             )
-            if len(st.session_state.formaciones) > 1:
-                if st.button("Eliminar formación", key=f"del_form_{i}"):
-                    st.session_state.formaciones.pop(i)
-                    st.rerun()
+            if len(st.session_state.formaciones) > 1 and st.button("Eliminar formación", key=f"del_form_{i}"):
+                st.session_state.formaciones.pop(i)
+                st.rerun()
 
     if st.button("+ Agregar otra formación"):
         st.session_state.formaciones.append(nueva_formacion())
@@ -81,51 +75,21 @@ def render_formaciones():
 
 def render_experiencias():
     st.subheader("2. Experiencia laboral")
-    st.caption("Registre sus experiencias laborales. La fecha final puede dejarse vacía si el empleo está vigente.")
-    tipos = ["Profesional", "Relacionada", "General", "Docente", "Otra"]
+    st.caption("La experiencia es opcional. Si registra una, indique cargo y fecha de inicio.")
+    tipos = ["Profesional", "Profesional relacionada", "Relacionada", "Específica", "Docente", "Laboral", "Otra"]
 
     for i, experiencia in enumerate(st.session_state.experiencias):
         with st.container(border=True):
             c1, c2 = st.columns(2)
-            experiencia["cargo"] = c1.text_input(
-                "Cargo",
-                value=experiencia.get("cargo", ""),
-                placeholder="Ej. Profesional especializado",
-                key=f"cargo_{i}",
-            )
-            experiencia["empresa"] = c2.text_input(
-                "Entidad / empresa",
-                value=experiencia.get("empresa", ""),
-                placeholder="Ej. Entidad pública",
-                key=f"empresa_{i}",
-            )
-            experiencia["funciones"] = st.text_area(
-                "Funciones principales",
-                value=experiencia.get("funciones", ""),
-                placeholder="Describa brevemente sus funciones y responsabilidades.",
-                key=f"funciones_{i}",
-            )
+            experiencia["cargo"] = c1.text_input("Cargo", value=experiencia.get("cargo", ""), placeholder="Ej. Profesional especializado", key=f"cargo_{i}")
+            experiencia["empresa"] = c2.text_input("Entidad / empresa", value=experiencia.get("empresa", ""), placeholder="Ej. Entidad pública", key=f"empresa_{i}")
+            experiencia["funciones"] = st.text_area("Funciones principales", value=experiencia.get("funciones", ""), placeholder="Describa brevemente sus funciones y responsabilidades.", key=f"funciones_{i}")
             c3, c4, c5 = st.columns(3)
             tipo_actual = experiencia.get("tipo", "Profesional")
             indice_tipo = tipos.index(tipo_actual) if tipo_actual in tipos else 0
-            experiencia["tipo"] = c3.selectbox(
-                "Tipo de experiencia",
-                tipos,
-                index=indice_tipo,
-                key=f"tipo_{i}",
-            )
-            experiencia["fecha_inicio"] = c4.text_input(
-                "Fecha inicio",
-                value=experiencia.get("fecha_inicio", ""),
-                placeholder="AAAA-MM-DD",
-                key=f"inicio_{i}",
-            )
-            experiencia["fecha_fin"] = c5.text_input(
-                "Fecha fin",
-                value=experiencia.get("fecha_fin", ""),
-                placeholder="AAAA-MM-DD o vacío",
-                key=f"fin_{i}",
-            )
+            experiencia["tipo"] = c3.selectbox("Tipo de experiencia", tipos, index=indice_tipo, key=f"tipo_{i}")
+            experiencia["fecha_inicio"] = c4.text_input("Fecha inicio", value=experiencia.get("fecha_inicio", ""), placeholder="AAAA-MM-DD", key=f"inicio_{i}")
+            experiencia["fecha_fin"] = c5.text_input("Fecha fin", value=experiencia.get("fecha_fin", ""), placeholder="AAAA-MM-DD o vacío", key=f"fin_{i}")
             if st.button("Eliminar experiencia", key=f"del_exp_{i}"):
                 st.session_state.experiencias.pop(i)
                 st.rerun()
@@ -136,69 +100,77 @@ def render_experiencias():
 
 
 def construir_perfil():
-    formaciones = []
-    for f in st.session_state.formaciones:
-        if f.get("titulo", "").strip():
-            formaciones.append({"nivel": f["nivel"], "titulo": f["titulo"].strip()})
+    formaciones = [
+        {"nivel": f["nivel"], "titulo": f["titulo"].strip()}
+        for f in st.session_state.formaciones
+        if f.get("titulo", "").strip()
+    ]
 
     experiencias = []
     for e in st.session_state.experiencias:
-        if e.get("cargo", "").strip() or e.get("funciones", "").strip():
-            experiencias.append(
-                {
-                    "cargo": e.get("cargo", "").strip(),
-                    "empresa": e.get("empresa", "").strip(),
-                    "funciones": e.get("funciones", "").strip(),
-                    "tipo": e.get("tipo", "Profesional"),
-                    "fecha_inicio": e.get("fecha_inicio", "").strip(),
-                    "fecha_fin": e.get("fecha_fin", "").strip() or None,
-                }
-            )
+        cargo = e.get("cargo", "").strip()
+        funciones = e.get("funciones", "").strip()
+        if cargo or funciones:
+            experiencias.append({
+                "cargo": cargo,
+                "empresa": e.get("empresa", "").strip(),
+                "funciones": funciones,
+                "tipo": e.get("tipo", "Profesional"),
+                "fecha_inicio": e.get("fecha_inicio", "").strip(),
+                "fecha_fin": e.get("fecha_fin", "").strip() or None,
+            })
     return {"formaciones": formaciones, "experiencias": experiencias}
 
 
-def mostrar_resultados(resultado):
-    st.success(f"Se encontraron {resultado['total_elegibles']} oportunidades elegibles en el catálogo del prototipo.")
+def mostrar_resultados(resultado: pd.DataFrame):
+    """Presenta exactamente la salida producida por MotorRecomendacionCNSC.recomendar()."""
+    st.success(f"Se generaron {len(resultado)} recomendaciones orientativas del catálogo histórico del prototipo.")
     st.info(ADVERTENCIA)
 
-    recomendaciones = resultado.get("recomendaciones", [])
-    if not recomendaciones:
-        st.warning("No se encontraron vacantes elegibles para el perfil registrado.")
+    if resultado.empty:
+        st.warning("No se generaron recomendaciones para el perfil registrado.")
         return
 
-    df = pd.DataFrame(recomendaciones)
+    df = resultado.copy()
+    df["indice_compatibilidad_pct"] = (df["indice_compatibilidad"] * 100).round(1)
+    df["brecha_meses"] = df["brecha_meses"].round(1)
+    df["experiencia_ciudadano_meses"] = df["experiencia_ciudadano_meses"].round(1)
+
     columnas = [
-        "codigo_opec",
-        "denominacion",
-        "entidad",
-        "departamento",
-        "municipio",
-        "nivel",
-        "grado",
-        "asignacion_basica",
-        "indice_compatibilidad",
-        "nivel_compatibilidad",
-        "cumple_vrm",
+        "posicion", "opec", "descripcion", "indice_compatibilidad_pct",
+        "orientacion", "tipo_ruta", "meses_requeridos", "brecha_meses"
     ]
     columnas = [c for c in columnas if c in df.columns]
-    st.subheader("Oportunidades recomendadas")
-    st.dataframe(df[columnas], use_container_width=True, hide_index=True)
+    vista = df[columnas].rename(columns={
+        "posicion": "Posición",
+        "opec": "OPEC",
+        "descripcion": "Descripción",
+        "indice_compatibilidad_pct": "Índice de compatibilidad (%)",
+        "orientacion": "Orientación",
+        "tipo_ruta": "Ruta evaluada",
+        "meses_requeridos": "Meses requeridos",
+        "brecha_meses": "Brecha de experiencia (meses)",
+    })
 
-    st.subheader("Detalle")
-    for rec in recomendaciones:
-        titulo = f"{rec.get('codigo_opec', 'OPEC')} · {rec.get('denominacion', '')} · {rec.get('indice_compatibilidad', 0):.1f}%"
+    st.subheader("Oportunidades recomendadas")
+    st.dataframe(vista, use_container_width=True, hide_index=True)
+
+    st.subheader("Detalle de las recomendaciones")
+    for _, rec in df.iterrows():
+        titulo = f"#{int(rec['posicion'])} · OPEC {rec['opec']} · {rec['indice_compatibilidad_pct']:.1f}%"
         with st.expander(titulo):
             c1, c2, c3 = st.columns(3)
-            c1.metric("Índice de compatibilidad", f"{rec.get('indice_compatibilidad', 0):.1f}%")
-            c2.metric("Nivel", rec.get("nivel_compatibilidad", ""))
-            c3.metric("VRM", "Cumple" if rec.get("cumple_vrm") else "No cumple")
-            st.write(f"**Entidad:** {rec.get('entidad', '')}")
-            st.write(f"**Ubicación:** {rec.get('municipio', '')}, {rec.get('departamento', '')}")
-            st.write(f"**Nivel / grado:** {rec.get('nivel', '')} / {rec.get('grado', '')}")
-            st.write(f"**Asignación básica:** {rec.get('asignacion_basica', '')}")
-            st.write(f"**Propósito:** {rec.get('proposito', '')}")
-            st.write(f"**Requisitos:** {rec.get('requisitos', '')}")
-            st.write(f"**Justificación:** {rec.get('justificacion', '')}")
+            c1.metric("Índice de compatibilidad", f"{rec['indice_compatibilidad_pct']:.1f}%")
+            c2.metric("Experiencia registrada", f"{rec['experiencia_ciudadano_meses']:.1f} meses")
+            c3.metric("Brecha de experiencia", f"{rec['brecha_meses']:.1f} meses")
+            st.write(f"**Descripción:** {rec.get('descripcion', '')}")
+            st.write(f"**Orientación:** {rec.get('orientacion', '')}")
+            st.write(f"**Ruta evaluada:** {rec.get('tipo_ruta', '')} — ruta {rec.get('numero_ruta', '')}")
+            st.write(f"**Requisito de estudio:** {rec.get('requisito_estudio', '')}")
+            st.write(f"**Requisito de experiencia:** {rec.get('requisito_experiencia', '')}")
+            st.write(f"**Meses requeridos:** {rec.get('meses_requeridos', 0):.1f}")
+            st.write(f"**Similitud académica:** {rec.get('similitud_academica', 0):.3f}")
+            st.write(f"**Similitud de experiencia:** {rec.get('similitud_experiencia', 0):.3f}")
             st.caption(rec.get("advertencia", ADVERTENCIA))
 
 
@@ -209,17 +181,17 @@ def main():
     st.title("🧭 Orientador de oportunidades laborales públicas")
     st.write(
         "Ingrese su formación y experiencia. El prototipo compara su perfil con un catálogo histórico OPEC "
-        "y presenta las oportunidades elegibles ordenadas mediante un índice de compatibilidad."
+        "y presenta un ranking orientativo mediante un índice de compatibilidad."
     )
     st.warning(ADVERTENCIA)
 
     with st.sidebar:
         st.header("Acerca del prototipo")
         st.write("Proyecto académico de Maestría en Ciencia de Datos.")
-        st.write(f"**Modelo:** {motor.metadata.get('modelo_seleccionado', 'No especificado')}")
-        st.write(f"**Versión:** {motor.metadata.get('version_modelo', 'v1')}")
-        st.write(f"**Catálogo:** {motor.metadata.get('catalogo', 'OPEC histórica 2024')}")
-        st.caption("La información oficial debe verificarse siempre en las fuentes de la CNSC.")
+        st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo', motor.metadata.get('modelo_seleccionado', 'No especificado'))}")
+        st.write(f"**Versión:** {motor.metadata.get('version', motor.metadata.get('version_modelo', 'v1'))}")
+        st.write(f"**Catálogo:** {motor.metadata.get('catalogo', 'Histórico OPEC 2024')}")
+        st.caption("La información oficial y los requisitos deben verificarse siempre en las fuentes de la CNSC.")
 
     render_formaciones()
     render_experiencias()
