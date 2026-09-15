@@ -85,52 +85,19 @@ def render_experiencias():
     for i, experiencia in enumerate(st.session_state.experiencias):
         with st.container(border=True):
             c1, c2 = st.columns(2)
-            experiencia["cargo"] = c1.text_input(
-                "Cargo",
-                value=experiencia.get("cargo", ""),
-                placeholder="Ej. Profesional especializado",
-                key=f"cargo_{i}",
-            )
-            experiencia["empresa"] = c2.text_input(
-                "Entidad / empresa",
-                value=experiencia.get("empresa", ""),
-                placeholder="Ej. Entidad pública",
-                key=f"empresa_{i}",
-            )
-            experiencia["funciones"] = st.text_area(
-                "Funciones principales",
-                value=experiencia.get("funciones", ""),
-                placeholder="Describa brevemente sus funciones y responsabilidades.",
-                key=f"funciones_{i}",
-            )
+            experiencia["cargo"] = c1.text_input("Cargo", value=experiencia.get("cargo", ""), placeholder="Ej. Profesional especializado", key=f"cargo_{i}")
+            experiencia["empresa"] = c2.text_input("Entidad / empresa", value=experiencia.get("empresa", ""), placeholder="Ej. Entidad pública", key=f"empresa_{i}")
+            experiencia["funciones"] = st.text_area("Funciones principales", value=experiencia.get("funciones", ""), placeholder="Describa brevemente sus funciones y responsabilidades.", key=f"funciones_{i}")
             c3, c4, c5 = st.columns(3)
             tipo_actual = experiencia.get("tipo", "Profesional")
             indice_tipo = tipos.index(tipo_actual) if tipo_actual in tipos else 0
             experiencia["tipo"] = c3.selectbox(
-                "Tipo de experiencia laboral",
-                tipos,
-                index=indice_tipo,
-                help=(
-                    "Seleccione la opción que mejor describa la experiencia registrada. "
-                    "Profesional relacionada: experiencia profesional vinculada con las funciones o el área del empleo; "
-                    "Relacionada: experiencia en actividades similares; Específica: experiencia directamente asociada "
-                    "con una actividad o conocimiento particular; Laboral: experiencia de trabajo general. "
-                    "Si no está seguro, seleccione 'Otra'."
-                ),
+                "Tipo de experiencia laboral", tipos, index=indice_tipo,
+                help=("Seleccione la opción que mejor describa la experiencia registrada. Profesional relacionada: experiencia profesional vinculada con las funciones o el área del empleo; Relacionada: experiencia en actividades similares; Específica: experiencia directamente asociada con una actividad o conocimiento particular; Laboral: experiencia de trabajo general. Si no está seguro, seleccione 'Otra'."),
                 key=f"tipo_{i}",
             )
-            experiencia["fecha_inicio"] = c4.text_input(
-                "Fecha de inicio",
-                value=experiencia.get("fecha_inicio", ""),
-                placeholder="AAAA-MM-DD",
-                key=f"inicio_{i}",
-            )
-            experiencia["fecha_fin"] = c5.text_input(
-                "Fecha de finalización",
-                value=experiencia.get("fecha_fin", ""),
-                placeholder="AAAA-MM-DD o vacío si continúa",
-                key=f"fin_{i}",
-            )
+            experiencia["fecha_inicio"] = c4.text_input("Fecha de inicio", value=experiencia.get("fecha_inicio", ""), placeholder="AAAA-MM-DD", key=f"inicio_{i}")
+            experiencia["fecha_fin"] = c5.text_input("Fecha de finalización", value=experiencia.get("fecha_fin", ""), placeholder="AAAA-MM-DD o vacío si continúa", key=f"fin_{i}")
             if st.button("Eliminar experiencia", key=f"del_exp_{i}"):
                 st.session_state.experiencias.pop(i)
                 st.rerun()
@@ -141,12 +108,7 @@ def render_experiencias():
 
 
 def construir_perfil():
-    formaciones = [
-        {"nivel": f["nivel"], "titulo": f["titulo"].strip()}
-        for f in st.session_state.formaciones
-        if f.get("titulo", "").strip()
-    ]
-
+    formaciones = [{"nivel": f["nivel"], "titulo": f["titulo"].strip()} for f in st.session_state.formaciones if f.get("titulo", "").strip()]
     experiencias = []
     for e in st.session_state.experiencias:
         cargo = e.get("cargo", "").strip()
@@ -165,10 +127,7 @@ def construir_perfil():
 
 def mostrar_resultados(resultado: pd.DataFrame):
     """Presenta la salida del motor en lenguaje comprensible para el ciudadano."""
-    st.success(
-        f"Se encontraron {len(resultado)} oportunidades del catálogo histórico, ordenadas según su "
-        "compatibilidad con el perfil registrado."
-    )
+    st.success(f"Se encontraron {len(resultado)} oportunidades del catálogo histórico, ordenadas según su compatibilidad con el perfil registrado.")
     st.info(ADVERTENCIA)
 
     if resultado.empty:
@@ -181,21 +140,15 @@ def mostrar_resultados(resultado: pd.DataFrame):
     df["experiencia_ciudadano_meses"] = df["experiencia_ciudadano_meses"].round(1)
 
     columnas = ["posicion", "opec", "descripcion", "indice_compatibilidad_pct", "orientacion"]
-    columnas = [c for c in columnas if c in df.columns]
     vista = df[columnas].rename(columns={
-        "posicion": "Posición",
-        "opec": "OPEC",
-        "descripcion": "Descripción",
-        "indice_compatibilidad_pct": "Compatibilidad (%)",
-        "orientacion": "Orientación",
+        "posicion": "Posición", "opec": "OPEC", "descripcion": "Descripción",
+        "indice_compatibilidad_pct": "Compatibilidad (%)", "orientacion": "Orientación",
     })
 
     st.subheader("Oportunidades recomendadas")
     st.caption("Las oportunidades se presentan de mayor a menor índice de compatibilidad histórica.")
     st.dataframe(
-        vista,
-        use_container_width=True,
-        hide_index=True,
+        vista, use_container_width=True, hide_index=True,
         column_config={
             "Posición": st.column_config.NumberColumn(width="small"),
             "OPEC": st.column_config.TextColumn(width="small"),
@@ -204,6 +157,17 @@ def mostrar_resultados(resultado: pd.DataFrame):
             "Orientación": st.column_config.TextColumn(width="medium"),
         },
     )
+
+    st.subheader("Visualización de compatibilidad")
+    st.caption(
+        "Comparación gráfica del índice de compatibilidad de las oportunidades mostradas. "
+        "Este valor no representa una probabilidad de superar la VRM."
+    )
+    grafico = df[["opec", "indice_compatibilidad_pct"]].copy()
+    grafico["OPEC"] = "OPEC " + grafico["opec"].astype(str)
+    grafico = grafico.set_index("OPEC")[["indice_compatibilidad_pct"]]
+    grafico.columns = ["Compatibilidad (%)"]
+    st.bar_chart(grafico, horizontal=True, x_label="Índice de compatibilidad (%)", y_label="Oportunidad OPEC")
 
     st.subheader("Detalle de las recomendaciones")
     st.caption("Abra una oportunidad para consultar los requisitos comparados con su perfil.")
@@ -215,12 +179,14 @@ def mostrar_resultados(resultado: pd.DataFrame):
             c2.metric("Experiencia registrada", f"{rec['experiencia_ciudadano_meses']:.1f} meses")
             c3.metric("Brecha de experiencia", f"{rec['brecha_meses']:.1f} meses")
 
+            st.progress(
+                max(0, min(100, int(round(rec["indice_compatibilidad_pct"])))) / 100,
+                text=f"Compatibilidad histórica: {rec['indice_compatibilidad_pct']:.1f}%",
+            )
+
             st.write(f"**Orientación:** {rec.get('orientacion', '')}")
             st.write(f"**Alternativa de requisitos evaluada:** Opción {rec.get('numero_ruta', '')}")
-            st.caption(
-                "Algunas oportunidades contemplan diferentes combinaciones de estudio y experiencia. "
-                "Se muestra la alternativa utilizada para orientar esta recomendación."
-            )
+            st.caption("Algunas oportunidades contemplan diferentes combinaciones de estudio y experiencia. Se muestra la alternativa utilizada para orientar esta recomendación.")
             st.write(f"**Descripción de la oportunidad:** {rec.get('descripcion', '')}")
             st.write(f"**Requisito de estudios:** {rec.get('requisito_estudio', '')}")
             st.write(f"**Requisito de experiencia:** {rec.get('requisito_experiencia', '')}")
@@ -232,7 +198,6 @@ def mostrar_resultados(resultado: pd.DataFrame):
                 st.write(f"**Tipo de ruta interna:** {rec.get('tipo_ruta', '')}")
                 st.write(f"**Similitud académica:** {rec.get('similitud_academica', 0):.3f}")
                 st.write(f"**Similitud de experiencia:** {rec.get('similitud_experiencia', 0):.3f}")
-
             st.caption(rec.get("advertencia", ADVERTENCIA))
 
 
@@ -241,10 +206,7 @@ def main():
     motor = cargar_motor()
 
     st.title("🧭 Orientador de oportunidades laborales públicas")
-    st.write(
-        "Ingrese su formación y experiencia. El prototipo compara su perfil con un catálogo histórico OPEC "
-        "y presenta un ranking orientativo mediante un índice de compatibilidad."
-    )
+    st.write("Ingrese su formación y experiencia. El prototipo compara su perfil con un catálogo histórico OPEC y presenta un ranking orientativo mediante un índice de compatibilidad.")
     st.warning(ADVERTENCIA)
 
     with st.sidebar:
@@ -260,10 +222,7 @@ def main():
 
     st.subheader("3. Generar recomendaciones")
     top_n = st.slider(
-        "Número de oportunidades a mostrar",
-        min_value=1,
-        max_value=50,
-        value=10,
+        "Número de oportunidades a mostrar", min_value=1, max_value=50, value=10,
         help="Seleccione cuántas oportunidades desea consultar, ordenadas de mayor a menor compatibilidad con su perfil.",
     )
 
