@@ -1,0 +1,11 @@
+{
+  "formaciones": [
+    {"nivel": "PROFESIONAL", "titulo": "Ingeniería Industrial"},
+    {"nivel": "ESPECIALIZACION PROFESIONAL", "titulo": "Gerencia de Proyectos"}
+  ],
+  "experiencias": [
+    {"cargo": "Profesional de planeación", "empresa": "Entidad pública", "funciones": "Planeación, seguimiento de proyectos e indicadores", "tipo": "Experiencia profesional relacionada", "fecha_inicio": "2019-01-15", "fecha_fin": "2022-12-31"},
+    {"cargo": "Profesional de proyectos", "empresa": "Empresa privada", "funciones": "Gestión de proyectos y análisis de información", "tipo": "Experiencia profesional", "fecha_inicio": "2022-06-01", "fecha_fin": "2024-05-31"}
+  ],
+  "top_n": 10
+}
