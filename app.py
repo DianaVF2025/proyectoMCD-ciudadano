@@ -77,27 +77,62 @@ def render_formaciones():
 def render_experiencias():
     st.subheader("2. Experiencia laboral")
     st.caption(
-        "La experiencia es opcional. Si registra una, indique como mínimo el cargo, tipo de experiencia y "
-        "fecha de inicio. Deje la fecha de finalización vacía si actualmente continúa en ese empleo."
+        "La experiencia es opcional. Registre los datos objetivos de cada empleo o actividad: cargo, entidad, "
+        "funciones y fechas. La relación de la experiencia con una oportunidad específica no la declara el ciudadano."
     )
-    tipos = ["Profesional", "Profesional relacionada", "Relacionada", "Específica", "Docente", "Laboral", "Otra"]
+
+    tipos = ["Profesional", "Docente", "Laboral", "Otra"]
 
     for i, experiencia in enumerate(st.session_state.experiencias):
         with st.container(border=True):
             c1, c2 = st.columns(2)
-            experiencia["cargo"] = c1.text_input("Cargo", value=experiencia.get("cargo", ""), placeholder="Ej. Profesional especializado", key=f"cargo_{i}")
-            experiencia["empresa"] = c2.text_input("Entidad / empresa", value=experiencia.get("empresa", ""), placeholder="Ej. Entidad pública", key=f"empresa_{i}")
-            experiencia["funciones"] = st.text_area("Funciones principales", value=experiencia.get("funciones", ""), placeholder="Describa brevemente sus funciones y responsabilidades.", key=f"funciones_{i}")
+            experiencia["cargo"] = c1.text_input(
+                "Cargo",
+                value=experiencia.get("cargo", ""),
+                placeholder="Ej. Profesional especializado",
+                key=f"cargo_{i}",
+            )
+            experiencia["empresa"] = c2.text_input(
+                "Entidad / empresa",
+                value=experiencia.get("empresa", ""),
+                placeholder="Ej. Entidad pública",
+                key=f"empresa_{i}",
+            )
+            experiencia["funciones"] = st.text_area(
+                "Funciones principales",
+                value=experiencia.get("funciones", ""),
+                placeholder="Describa brevemente sus funciones y responsabilidades.",
+                help="Las funciones permiten contrastar el contenido de la experiencia con los requisitos históricos de las oportunidades.",
+                key=f"funciones_{i}",
+            )
+
             c3, c4, c5 = st.columns(3)
             tipo_actual = experiencia.get("tipo", "Profesional")
-            indice_tipo = tipos.index(tipo_actual) if tipo_actual in tipos else 0
+            if tipo_actual not in tipos:
+                tipo_actual = "Profesional"
             experiencia["tipo"] = c3.selectbox(
-                "Tipo de experiencia laboral", tipos, index=indice_tipo,
-                help=("Seleccione la opción que mejor describa la experiencia registrada. Este dato se conserva porque forma parte de las variables de entrada del modelo aprobado."),
+                "Naturaleza general de la experiencia",
+                tipos,
+                index=tipos.index(tipo_actual),
+                help=(
+                    "Indique únicamente la naturaleza general de la experiencia. No se solicita clasificarla como "
+                    "relacionada o específica, porque esa relación depende de los requisitos de cada OPEC."
+                ),
                 key=f"tipo_{i}",
             )
-            experiencia["fecha_inicio"] = c4.text_input("Fecha de inicio", value=experiencia.get("fecha_inicio", ""), placeholder="AAAA-MM-DD", key=f"inicio_{i}")
-            experiencia["fecha_fin"] = c5.text_input("Fecha de finalización", value=experiencia.get("fecha_fin", ""), placeholder="AAAA-MM-DD o vacío si continúa", key=f"fin_{i}")
+            experiencia["fecha_inicio"] = c4.text_input(
+                "Fecha de inicio",
+                value=experiencia.get("fecha_inicio", ""),
+                placeholder="AAAA-MM-DD",
+                key=f"inicio_{i}",
+            )
+            experiencia["fecha_fin"] = c5.text_input(
+                "Fecha de finalización",
+                value=experiencia.get("fecha_fin", ""),
+                placeholder="AAAA-MM-DD o vacío si continúa",
+                key=f"fin_{i}",
+            )
+
             if st.button("Eliminar experiencia", key=f"del_exp_{i}"):
                 st.session_state.experiencias.pop(i)
                 st.rerun()
@@ -108,7 +143,11 @@ def render_experiencias():
 
 
 def construir_perfil():
-    formaciones = [{"nivel": f["nivel"], "titulo": f["titulo"].strip()} for f in st.session_state.formaciones if f.get("titulo", "").strip()]
+    formaciones = [
+        {"nivel": f["nivel"], "titulo": f["titulo"].strip()}
+        for f in st.session_state.formaciones
+        if f.get("titulo", "").strip()
+    ]
     experiencias = []
     for e in st.session_state.experiencias:
         cargo = e.get("cargo", "").strip()
@@ -126,7 +165,7 @@ def construir_perfil():
 
 
 def obtener_rutas_originales(motor, opec):
-    """Recupera las rutas originales del catálogo sin interpretarlas ni modificarlas."""
+    """Recupera requisitos originales del catálogo sin interpretarlos ni modificar el motor."""
     coincidencias = motor.catalogo[motor.catalogo["opec"].astype(str) == str(opec)]
     if coincidencias.empty:
         return []
@@ -140,45 +179,49 @@ def obtener_rutas_originales(motor, opec):
 
 
 def mostrar_requisitos_originales(motor, opec):
-    """Muestra el requisito registrado en el catálogo sin emitir juicio de cumplimiento."""
+    """Muestra los requisitos históricos sin exponer la ruta técnica elegida por el motor."""
     rutas = obtener_rutas_originales(motor, opec)
-    st.markdown("#### Requisitos originales registrados para la OPEC")
+    st.markdown("#### Requisitos registrados para la oportunidad")
     st.caption(
-        "Se presentan como están registrados en el catálogo histórico. El prototipo no determina "
-        "si su perfil cumple estos requisitos ni construye equivalencias académicas propias."
+        "Se presentan los requisitos disponibles en el catálogo histórico. El prototipo no certifica "
+        "su cumplimiento ni construye equivalencias académicas propias."
     )
 
     if not rutas:
-        st.write("No se encontraron rutas de requisitos para esta oportunidad en el catálogo histórico.")
+        st.write("No se encontraron requisitos para esta oportunidad en el catálogo histórico.")
         return
 
     for i, ruta in enumerate(rutas, start=1):
-        numero_ruta = (ruta or {}).get("numero_ruta", i)
-        st.markdown(f"**Opción {numero_ruta}**")
-        encontrados = False
+        componentes = []
         for clave, etiqueta in (
-            ("requisito_principal", "Requisito principal"),
-            ("requisito_alternativo", "Requisito alternativo"),
+            ("requisito_principal", "Requisito"),
+            ("requisito_alternativo", "Alternativa"),
         ):
             requisito = (ruta or {}).get(clave, {}) or {}
             estudio = str(requisito.get("estudio") or "").strip()
             experiencia = str(requisito.get("experiencia") or "").strip()
             meses = requisito.get("tiempomin")
             if estudio or experiencia or meses not in (None, ""):
-                encontrados = True
+                componentes.append((etiqueta, estudio, experiencia, meses))
+
+        if not componentes:
+            continue
+
+        if len(rutas) > 1:
+            st.markdown(f"**Alternativa de requisitos {i}**")
+
+        for etiqueta, estudio, experiencia, meses in componentes:
+            if len(componentes) > 1:
                 st.write(f"**{etiqueta}**")
-                if estudio:
-                    st.write(f"Estudios: {estudio}")
-                if experiencia:
-                    st.write(f"Experiencia: {experiencia}")
-                if meses not in (None, ""):
-                    st.write(f"Tiempo mínimo registrado: {meses} meses")
-        if not encontrados:
-            st.write("Sin información de requisitos en esta opción.")
+            if estudio:
+                st.write(f"Estudios: {estudio}")
+            if experiencia:
+                st.write(f"Experiencia: {experiencia}")
+            if meses not in (None, ""):
+                st.write(f"Tiempo mínimo registrado: {meses} meses")
 
 
 def mostrar_resultados(resultado: pd.DataFrame, motor):
-    """Presenta el índice histórico separado de los requisitos originales de la OPEC."""
     if resultado.empty:
         st.warning("No se encontraron oportunidades para el perfil registrado.")
         return
@@ -188,17 +231,15 @@ def mostrar_resultados(resultado: pd.DataFrame, motor):
         "el índice de compatibilidad histórica generado por el modelo aprobado."
     )
     st.warning(
-        "El orden presentado corresponde al índice generado por el modelo predictivo a partir de "
-        "información histórica. Antes de postularse, revise los requisitos académicos y de experiencia "
-        "de cada oportunidad."
+        "El índice es una orientación basada en patrones históricos. Antes de postularse, revise directamente "
+        "los requisitos académicos y de experiencia de cada oportunidad."
     )
 
     df = resultado.copy()
     df["indice_compatibilidad_pct"] = (df["indice_compatibilidad"] * 100).round(1)
     df["experiencia_ciudadano_meses"] = df["experiencia_ciudadano_meses"].round(1)
 
-    columnas = ["posicion", "opec", "descripcion", "indice_compatibilidad_pct"]
-    vista = df[columnas].rename(columns={
+    vista = df[["posicion", "opec", "descripcion", "indice_compatibilidad_pct"]].rename(columns={
         "posicion": "Posición",
         "opec": "OPEC",
         "descripcion": "Descripción",
@@ -207,8 +248,8 @@ def mostrar_resultados(resultado: pd.DataFrame, motor):
 
     st.subheader("Oportunidades priorizadas según compatibilidad histórica")
     st.caption(
-        "El índice permite ordenar las oportunidades según patrones históricos del modelo. "
-        "No representa cumplimiento de requisitos ni probabilidad de selección."
+        "El índice ordena las oportunidades según el modelo aprobado. No representa una probabilidad de selección "
+        "ni una certificación del cumplimiento de requisitos."
     )
     st.dataframe(
         vista,
@@ -223,57 +264,41 @@ def mostrar_resultados(resultado: pd.DataFrame, motor):
     )
 
     st.subheader("Comparación del índice de compatibilidad histórica")
-    st.caption(
-        "La gráfica muestra únicamente el índice producido por el modelo aprobado. "
-        "No debe interpretarse como probabilidad ni como validación de requisitos."
-    )
     grafico = df[["opec", "indice_compatibilidad_pct"]].copy()
     grafico["OPEC"] = "OPEC " + grafico["opec"].astype(str)
     grafico = grafico.set_index("OPEC")[["indice_compatibilidad_pct"]]
     grafico.columns = ["Índice histórico (%)"]
-    st.bar_chart(grafico, horizontal=True, x_label="Índice de compatibilidad histórica (%)", y_label="Oportunidad OPEC")
-
-    st.subheader("Detalle de las oportunidades")
-    st.caption(
-        "Abra una oportunidad para consultar por separado el índice histórico y los requisitos "
-        "registrados en el catálogo."
+    st.bar_chart(
+        grafico,
+        horizontal=True,
+        x_label="Índice de compatibilidad histórica (%)",
+        y_label="Oportunidad OPEC",
     )
 
+    st.subheader("Detalle de las oportunidades")
     for _, rec in df.iterrows():
-        titulo = f"#{int(rec['posicion'])} · OPEC {rec['opec']} · Índice histórico {rec['indice_compatibilidad_pct']:.1f}%"
+        titulo = (
+            f"#{int(rec['posicion'])} · OPEC {rec['opec']} · "
+            f"Índice histórico {rec['indice_compatibilidad_pct']:.1f}%"
+        )
         with st.expander(titulo):
             c1, c2 = st.columns(2)
             c1.metric("Índice de compatibilidad histórica", f"{rec['indice_compatibilidad_pct']:.1f}%")
-            c2.metric("Experiencia registrada por el ciudadano", f"{rec['experiencia_ciudadano_meses']:.1f} meses")
-
+            c2.metric(
+                "Experiencia total registrada",
+                f"{rec['experiencia_ciudadano_meses']:.1f} meses",
+            )
             st.info(
-                "El índice refleja patrones históricos identificados por el modelo y no determina "
-                "el cumplimiento de los requisitos de la OPEC."
+                "El índice refleja patrones históricos identificados por el modelo. La condición de experiencia "
+                "relacionada o específica depende de los requisitos de cada oportunidad y no es declarada "
+                "automáticamente por el ciudadano."
             )
             st.write(f"**Descripción de la oportunidad:** {rec.get('descripcion', '')}")
-
             mostrar_requisitos_originales(motor, rec["opec"])
-
             st.warning(
-                "Revise los requisitos académicos y de experiencia antes de postularse. "
-                "El índice de compatibilidad no constituye una verificación del cumplimiento "
-                "de los requisitos establecidos por la convocatoria."
+                "Revise los requisitos académicos y de experiencia antes de postularse. El índice de compatibilidad "
+                "no constituye una verificación oficial de los requisitos establecidos por la convocatoria."
             )
-
-            with st.expander("Ver trazabilidad técnica del cálculo"):
-                st.caption(
-                    "Información interna utilizada por el motor aprobado. Estos valores no constituyen "
-                    "una evaluación oficial del cumplimiento de requisitos."
-                )
-                st.write(f"**Ruta interna seleccionada por el motor:** Opción {rec.get('numero_ruta', '')}")
-                st.write(f"**Tipo de ruta interna:** {rec.get('tipo_ruta', '')}")
-                st.write(f"**Requisito de estudio de la ruta interna:** {rec.get('requisito_estudio', '')}")
-                st.write(f"**Requisito de experiencia de la ruta interna:** {rec.get('requisito_experiencia', '')}")
-                st.write(f"**Meses requeridos en la ruta interna:** {rec.get('meses_requeridos', 0):.1f}")
-                st.write(f"**Brecha temporal calculada:** {rec.get('brecha_meses', 0):.1f} meses")
-                st.write(f"**Similitud académica interna:** {rec.get('similitud_academica', 0):.3f}")
-                st.write(f"**Similitud de experiencia interna:** {rec.get('similitud_experiencia', 0):.3f}")
-
             st.caption(rec.get("advertencia", ADVERTENCIA))
 
 
@@ -283,49 +308,37 @@ def main():
 
     st.title("🧭 Orientador de oportunidades laborales públicas")
     st.write(
-        "Ingrese su formación y experiencia. El prototipo utiliza el modelo predictivo aprobado para "
-        "priorizar oportunidades de un catálogo histórico OPEC mediante un índice de compatibilidad histórica."
+        "Ingrese su formación y experiencia. El prototipo utiliza el modelo predictivo aprobado para priorizar "
+        "oportunidades de un catálogo histórico OPEC mediante un índice de compatibilidad histórica."
     )
     st.warning(
-        "El índice de compatibilidad histórica es una herramienta de orientación. No es una probabilidad "
-        "de selección, no certifica el cumplimiento de requisitos y no reemplaza la verificación oficial "
-        "de la CNSC."
+        "El índice de compatibilidad histórica es una herramienta de orientación. No es una probabilidad de "
+        "selección, no certifica el cumplimiento de requisitos y no reemplaza la verificación oficial de la CNSC."
     )
 
     with st.sidebar:
         st.header("Acerca del prototipo")
         st.write("Proyecto académico de Maestría en Ciencia de Datos.")
-        st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo', motor.metadata.get('modelo_seleccionado', 'No especificado'))}")
+        st.write(
+            f"**Modelo:** {motor.metadata.get('nombre_modelo', motor.metadata.get('modelo_seleccionado', 'No especificado'))}"
+        )
         st.write(f"**Versión:** {motor.metadata.get('version', motor.metadata.get('version_modelo', 'v1'))}")
         st.write(f"**Catálogo:** {motor.metadata.get('catalogo', 'Histórico OPEC 2024')}")
-        st.caption(
-            "El catálogo utilizado es histórico y se emplea con fines académicos y demostrativos. "
-            "La información oficial y vigente debe verificarse en las fuentes de la CNSC."
-        )
+        st.caption("El modelo, sus vectorizadores, variables, umbral y métricas aprobadas permanecen congelados.")
 
     render_formaciones()
     render_experiencias()
 
-    st.subheader("3. Consultar oportunidades")
-    top_n = st.slider(
-        "Número de oportunidades a mostrar",
-        min_value=1,
-        max_value=50,
-        value=10,
-        help="Seleccione cuántas oportunidades desea consultar, ordenadas por el índice de compatibilidad histórica.",
-    )
+    st.subheader("3. Generar orientación")
+    top_n = st.slider("Número de oportunidades a mostrar", min_value=1, max_value=20, value=10)
 
-    if st.button("Consultar oportunidades", type="primary", use_container_width=True):
-        perfil = construir_perfil()
+    if st.button("Priorizar oportunidades", type="primary", use_container_width=True):
         try:
+            perfil = construir_perfil()
             resultado = motor.recomendar(perfil, top_n=top_n)
             mostrar_resultados(resultado, motor)
         except Exception as exc:
-            st.error(f"No fue posible procesar el perfil: {exc}")
-
-    with st.expander("Ver ejemplo de perfil en JSON"):
-        ejemplo = json.loads((BASE_DIR / "ejemplo_perfil.json").read_text(encoding="utf-8"))
-        st.json(ejemplo)
+            st.error(f"No fue posible generar la orientación: {exc}")
 
 
 if __name__ == "__main__":
