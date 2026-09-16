@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+import re
+import unicodedata
 
 import pandas as pd
 import streamlit as st
@@ -20,6 +22,12 @@ BASE_DIR = Path(__file__).resolve().parent
 def cargar_motor():
     """Carga únicamente el paquete congelado aprobado para inferencia."""
     return MotorRecomendacionCNSC(BASE_DIR / "paquete_modelo_cnsc_v1.joblib")
+
+
+def normalizar_para_coincidencia(valor):
+    texto = unicodedata.normalize("NFKD", str(valor or "").lower())
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", texto).strip()
 
 
 def nueva_formacion():
@@ -80,59 +88,30 @@ def render_experiencias():
         "La experiencia es opcional. Registre los datos objetivos de cada empleo o actividad: cargo, entidad, "
         "funciones y fechas. La relación de la experiencia con una oportunidad específica no la declara el ciudadano."
     )
-
     tipos = ["Profesional", "Docente", "Laboral", "Otra"]
 
     for i, experiencia in enumerate(st.session_state.experiencias):
         with st.container(border=True):
             c1, c2 = st.columns(2)
-            experiencia["cargo"] = c1.text_input(
-                "Cargo",
-                value=experiencia.get("cargo", ""),
-                placeholder="Ej. Profesional especializado",
-                key=f"cargo_{i}",
-            )
-            experiencia["empresa"] = c2.text_input(
-                "Entidad / empresa",
-                value=experiencia.get("empresa", ""),
-                placeholder="Ej. Entidad pública",
-                key=f"empresa_{i}",
-            )
+            experiencia["cargo"] = c1.text_input("Cargo", value=experiencia.get("cargo", ""), placeholder="Ej. Profesional especializado", key=f"cargo_{i}")
+            experiencia["empresa"] = c2.text_input("Entidad / empresa", value=experiencia.get("empresa", ""), placeholder="Ej. Entidad pública", key=f"empresa_{i}")
             experiencia["funciones"] = st.text_area(
-                "Funciones principales",
-                value=experiencia.get("funciones", ""),
+                "Funciones principales", value=experiencia.get("funciones", ""),
                 placeholder="Describa brevemente sus funciones y responsabilidades.",
                 help="Las funciones permiten contrastar el contenido de la experiencia con los requisitos históricos de las oportunidades.",
                 key=f"funciones_{i}",
             )
-
             c3, c4, c5 = st.columns(3)
             tipo_actual = experiencia.get("tipo", "Profesional")
             if tipo_actual not in tipos:
                 tipo_actual = "Profesional"
             experiencia["tipo"] = c3.selectbox(
-                "Naturaleza general de la experiencia",
-                tipos,
-                index=tipos.index(tipo_actual),
-                help=(
-                    "Indique únicamente la naturaleza general de la experiencia. No se solicita clasificarla como "
-                    "relacionada o específica, porque esa relación depende de los requisitos de cada OPEC."
-                ),
+                "Naturaleza general de la experiencia", tipos, index=tipos.index(tipo_actual),
+                help="Indique únicamente la naturaleza general. La relación o especificidad depende de los requisitos de cada OPEC.",
                 key=f"tipo_{i}",
             )
-            experiencia["fecha_inicio"] = c4.text_input(
-                "Fecha de inicio",
-                value=experiencia.get("fecha_inicio", ""),
-                placeholder="AAAA-MM-DD",
-                key=f"inicio_{i}",
-            )
-            experiencia["fecha_fin"] = c5.text_input(
-                "Fecha de finalización",
-                value=experiencia.get("fecha_fin", ""),
-                placeholder="AAAA-MM-DD o vacío si continúa",
-                key=f"fin_{i}",
-            )
-
+            experiencia["fecha_inicio"] = c4.text_input("Fecha de inicio", value=experiencia.get("fecha_inicio", ""), placeholder="AAAA-MM-DD", key=f"inicio_{i}")
+            experiencia["fecha_fin"] = c5.text_input("Fecha de finalización", value=experiencia.get("fecha_fin", ""), placeholder="AAAA-MM-DD o vacío si continúa", key=f"fin_{i}")
             if st.button("Eliminar experiencia", key=f"del_exp_{i}"):
                 st.session_state.experiencias.pop(i)
                 st.rerun()
@@ -145,8 +124,7 @@ def render_experiencias():
 def construir_perfil():
     formaciones = [
         {"nivel": f["nivel"], "titulo": f["titulo"].strip()}
-        for f in st.session_state.formaciones
-        if f.get("titulo", "").strip()
+        for f in st.session_state.formaciones if f.get("titulo", "").strip()
     ]
     experiencias = []
     for e in st.session_state.experiencias:
@@ -165,7 +143,6 @@ def construir_perfil():
 
 
 def obtener_rutas_originales(motor, opec):
-    """Recupera requisitos originales del catálogo sin interpretarlos ni modificar el motor."""
     coincidencias = motor.catalogo[motor.catalogo["opec"].astype(str) == str(opec)]
     if coincidencias.empty:
         return []
@@ -178,38 +155,69 @@ def obtener_rutas_originales(motor, opec):
     return rutas if isinstance(rutas, list) else []
 
 
+def textos_estudio_opec(motor, opec):
+    textos = []
+    for ruta in obtener_rutas_originales(motor, opec):
+        for clave in ("requisito_principal", "requisito_alternativo"):
+            requisito = (ruta or {}).get(clave, {}) or {}
+            estudio = str(requisito.get("estudio") or "").strip()
+            if estudio:
+                textos.append(estudio)
+    return textos
+
+
+def coincidencia_directa_titulo(motor, opec, formaciones):
+    """Identifica solo presencia textual directa; no crea equivalencias ni interpreta NBC."""
+    requisitos = [normalizar_para_coincidencia(t) for t in textos_estudio_opec(motor, opec)]
+    titulos = [normalizar_para_coincidencia(f.get("titulo", "")) for f in formaciones]
+    titulos = [t for t in titulos if t]
+    for titulo in titulos:
+        for requisito in requisitos:
+            if titulo in requisito:
+                return True
+    return False
+
+
+def aplicar_priorizacion_formacion(resultado, motor, formaciones, top_n):
+    """Capa funcional: no modifica ni recalcula el índice producido por el modelo."""
+    if resultado.empty:
+        return resultado
+    df = resultado.copy()
+    df["coincidencia_titulo_directa"] = df["opec"].apply(
+        lambda opec: coincidencia_directa_titulo(motor, opec, formaciones)
+    )
+    coincidentes = df[df["coincidencia_titulo_directa"]].copy()
+    no_coincidentes = df[~df["coincidencia_titulo_directa"]].copy()
+    ordenado = pd.concat([coincidentes, no_coincidentes], ignore_index=True)
+    ordenado = ordenado.head(top_n).copy()
+    ordenado["posicion"] = range(1, len(ordenado) + 1)
+    return ordenado
+
+
 def mostrar_requisitos_originales(motor, opec):
-    """Muestra los requisitos históricos sin exponer la ruta técnica elegida por el motor."""
     rutas = obtener_rutas_originales(motor, opec)
     st.markdown("#### Requisitos registrados para la oportunidad")
     st.caption(
         "Se presentan los requisitos disponibles en el catálogo histórico. El prototipo no certifica "
         "su cumplimiento ni construye equivalencias académicas propias."
     )
-
     if not rutas:
         st.write("No se encontraron requisitos para esta oportunidad en el catálogo histórico.")
         return
 
     for i, ruta in enumerate(rutas, start=1):
         componentes = []
-        for clave, etiqueta in (
-            ("requisito_principal", "Requisito"),
-            ("requisito_alternativo", "Alternativa"),
-        ):
+        for clave, etiqueta in (("requisito_principal", "Requisito"), ("requisito_alternativo", "Alternativa")):
             requisito = (ruta or {}).get(clave, {}) or {}
             estudio = str(requisito.get("estudio") or "").strip()
             experiencia = str(requisito.get("experiencia") or "").strip()
             meses = requisito.get("tiempomin")
             if estudio or experiencia or meses not in (None, ""):
                 componentes.append((etiqueta, estudio, experiencia, meses))
-
         if not componentes:
             continue
-
         if len(rutas) > 1:
             st.markdown(f"**Alternativa de requisitos {i}**")
-
         for etiqueta, estudio, experiencia, meses in componentes:
             if len(componentes) > 1:
                 st.write(f"**{etiqueta}**")
@@ -221,83 +229,70 @@ def mostrar_requisitos_originales(motor, opec):
                 st.write(f"Tiempo mínimo registrado: {meses} meses")
 
 
-def mostrar_resultados(resultado: pd.DataFrame, motor):
+def mostrar_resultados(resultado: pd.DataFrame, motor, formaciones):
     if resultado.empty:
         st.warning("No se encontraron oportunidades para el perfil registrado.")
         return
 
-    st.success(
-        f"Se muestran {len(resultado)} oportunidades del catálogo histórico, priorizadas según "
-        "el índice de compatibilidad histórica generado por el modelo aprobado."
-    )
-    st.warning(
-        "El índice es una orientación basada en patrones históricos. Antes de postularse, revise directamente "
-        "los requisitos académicos y de experiencia de cada oportunidad."
-    )
-
     df = resultado.copy()
     df["indice_compatibilidad_pct"] = (df["indice_compatibilidad"] * 100).round(1)
     df["experiencia_ciudadano_meses"] = df["experiencia_ciudadano_meses"].round(1)
+    if "coincidencia_titulo_directa" not in df:
+        df["coincidencia_titulo_directa"] = False
 
-    vista = df[["posicion", "opec", "descripcion", "indice_compatibilidad_pct"]].rename(columns={
-        "posicion": "Posición",
-        "opec": "OPEC",
-        "descripcion": "Descripción",
+    cantidad = int(df["coincidencia_titulo_directa"].sum())
+    st.success(
+        f"Se muestran {len(df)} oportunidades priorizadas. En {cantidad} se identificó coincidencia textual "
+        "directa entre al menos un título declarado y el requisito académico registrado."
+    )
+    st.warning(
+        "La coincidencia textual es una ayuda de priorización de la interfaz: no certifica cumplimiento, no "
+        "interpreta NBC y no modifica el índice de compatibilidad histórica generado por el modelo aprobado."
+    )
+
+    vista = df[["posicion", "opec", "descripcion", "coincidencia_titulo_directa", "indice_compatibilidad_pct"]].rename(columns={
+        "posicion": "Posición", "opec": "OPEC", "descripcion": "Descripción",
+        "coincidencia_titulo_directa": "Coincidencia directa del título",
         "indice_compatibilidad_pct": "Índice histórico (%)",
     })
+    vista["Coincidencia directa del título"] = vista["Coincidencia directa del título"].map({True: "Identificada", False: "No identificada"})
 
-    st.subheader("Oportunidades priorizadas según compatibilidad histórica")
+    st.subheader("Oportunidades priorizadas")
     st.caption(
-        "El índice ordena las oportunidades según el modelo aprobado. No representa una probabilidad de selección "
-        "ni una certificación del cumplimiento de requisitos."
+        "Primero se presentan las oportunidades con coincidencia textual directa del título declarado. "
+        "Dentro de cada grupo se conserva el orden del índice histórico del modelo aprobado."
     )
-    st.dataframe(
-        vista,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Posición": st.column_config.NumberColumn(width="small"),
-            "OPEC": st.column_config.TextColumn(width="small"),
-            "Descripción": st.column_config.TextColumn(width="large"),
-            "Índice histórico (%)": st.column_config.NumberColumn(format="%.1f%%", width="medium"),
-        },
-    )
+    st.dataframe(vista, use_container_width=True, hide_index=True)
 
     st.subheader("Comparación del índice de compatibilidad histórica")
     grafico = df[["opec", "indice_compatibilidad_pct"]].copy()
     grafico["OPEC"] = "OPEC " + grafico["opec"].astype(str)
     grafico = grafico.set_index("OPEC")[["indice_compatibilidad_pct"]]
     grafico.columns = ["Índice histórico (%)"]
-    st.bar_chart(
-        grafico,
-        horizontal=True,
-        x_label="Índice de compatibilidad histórica (%)",
-        y_label="Oportunidad OPEC",
-    )
+    st.bar_chart(grafico, horizontal=True, x_label="Índice de compatibilidad histórica (%)", y_label="Oportunidad OPEC")
 
     st.subheader("Detalle de las oportunidades")
+    titulos_declarados = ", ".join(f.get("titulo", "") for f in formaciones if f.get("titulo", "").strip())
     for _, rec in df.iterrows():
-        titulo = (
-            f"#{int(rec['posicion'])} · OPEC {rec['opec']} · "
-            f"Índice histórico {rec['indice_compatibilidad_pct']:.1f}%"
-        )
+        titulo = f"#{int(rec['posicion'])} · OPEC {rec['opec']} · Índice histórico {rec['indice_compatibilidad_pct']:.1f}%"
         with st.expander(titulo):
             c1, c2 = st.columns(2)
             c1.metric("Índice de compatibilidad histórica", f"{rec['indice_compatibilidad_pct']:.1f}%")
-            c2.metric(
-                "Experiencia total registrada",
-                f"{rec['experiencia_ciudadano_meses']:.1f} meses",
-            )
-            st.info(
-                "El índice refleja patrones históricos identificados por el modelo. La condición de experiencia "
-                "relacionada o específica depende de los requisitos de cada oportunidad y no es declarada "
-                "automáticamente por el ciudadano."
+            c2.metric("Experiencia total registrada", f"{rec['experiencia_ciudadano_meses']:.1f} meses")
+            st.write(f"**Formación declarada:** {titulos_declarados}")
+            if bool(rec["coincidencia_titulo_directa"]):
+                st.success("Coincidencia textual directa con el requisito académico: Identificada")
+            else:
+                st.info("Coincidencia textual directa con el requisito académico: No identificada")
+            st.caption(
+                "Esta comparación solo busca el título declarado dentro del texto original del requisito. "
+                "No determina equivalencias, pertenencia a un NBC ni cumplimiento oficial."
             )
             st.write(f"**Descripción de la oportunidad:** {rec.get('descripcion', '')}")
             mostrar_requisitos_originales(motor, rec["opec"])
             st.warning(
-                "Revise los requisitos académicos y de experiencia antes de postularse. El índice de compatibilidad "
-                "no constituye una verificación oficial de los requisitos establecidos por la convocatoria."
+                "Revise los requisitos académicos y de experiencia antes de postularse. El índice histórico y la "
+                "coincidencia textual no constituyen una verificación oficial de los requisitos de la convocatoria."
             )
             st.caption(rec.get("advertencia", ADVERTENCIA))
 
@@ -308,8 +303,8 @@ def main():
 
     st.title("🧭 Orientador de oportunidades laborales públicas")
     st.write(
-        "Ingrese su formación y experiencia. El prototipo utiliza el modelo predictivo aprobado para priorizar "
-        "oportunidades de un catálogo histórico OPEC mediante un índice de compatibilidad histórica."
+        "Ingrese su formación y experiencia. El prototipo utiliza el modelo predictivo aprobado y una capa "
+        "funcional de priorización por coincidencia textual directa del título declarado."
     )
     st.warning(
         "El índice de compatibilidad histórica es una herramienta de orientación. No es una probabilidad de "
@@ -319,9 +314,7 @@ def main():
     with st.sidebar:
         st.header("Acerca del prototipo")
         st.write("Proyecto académico de Maestría en Ciencia de Datos.")
-        st.write(
-            f"**Modelo:** {motor.metadata.get('nombre_modelo', motor.metadata.get('modelo_seleccionado', 'No especificado'))}"
-        )
+        st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo', motor.metadata.get('modelo_seleccionado', 'No especificado'))}")
         st.write(f"**Versión:** {motor.metadata.get('version', motor.metadata.get('version_modelo', 'v1'))}")
         st.write(f"**Catálogo:** {motor.metadata.get('catalogo', 'Histórico OPEC 2024')}")
         st.caption("El modelo, sus vectorizadores, variables, umbral y métricas aprobadas permanecen congelados.")
@@ -335,8 +328,10 @@ def main():
     if st.button("Priorizar oportunidades", type="primary", use_container_width=True):
         try:
             perfil = construir_perfil()
-            resultado = motor.recomendar(perfil, top_n=top_n)
-            mostrar_resultados(resultado, motor)
+            # Se solicita el catálogo completo para que la capa funcional pueda priorizar antes de cortar el top N.
+            resultado_modelo = motor.recomendar(perfil, top_n=len(motor.catalogo))
+            resultado = aplicar_priorizacion_formacion(resultado_modelo, motor, perfil["formaciones"], top_n)
+            mostrar_resultados(resultado, motor, perfil["formaciones"])
         except Exception as exc:
             st.error(f"No fue posible generar la orientación: {exc}")
 
