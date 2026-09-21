@@ -1,74 +1,119 @@
-# Sistema de Orientación Laboral para Aspirantes a Vacantes Públicas CNSC
+# Orientador de oportunidades laborales del sector público colombiano
 
-**Proyecto:** Modelo Predictivo para la Recomendación de Oportunidades Laborales en el Ámbito Gubernamental  
-**Autores:** Diana Vásquez · Germán Mahecha  
-**Maestría:** Ciencia de Datos
+**Proyecto de Maestría en Ciencia de Datos**  
+**Proyecto:** *Realizar un análisis y diseño de un modelo predictivo para la recomendación de oportunidades laborales en el ámbito gubernamental*  
+**Autores:** Diana Vásquez · Germán Mahecha
 
----
+## Prototipo desplegado
+
+**Aplicación web:** https://proyectomcd-ciudadano-kqhpti4jdjkht2npkkquff.streamlit.app/
+
+El prototipo está publicado en Streamlit Community Cloud y puede utilizarse directamente desde el navegador, sin instalación local.
 
 ## Descripción
 
-Este repositorio contiene un prototipo orientado al ciudadano/aspirante que permite registrar información de formación académica y experiencia laboral para identificar oportunidades OPEC históricas compatibles con su perfil.
+Este repositorio contiene un prototipo orientado al **ciudadano/aspirante**. El usuario registra información básica de su formación académica y experiencia laboral y recibe oportunidades OPEC históricas ordenadas mediante un **índice de compatibilidad histórica** generado por el modelo predictivo aprobado.
 
-El sistema integra reglas de elegibilidad, procesamiento de variables y un modelo predictivo entrenado con información histórica. La salida principal es un **índice de compatibilidad**, utilizado para ordenar las oportunidades y apoyar la exploración del ciudadano.
+La interfaz complementa ese resultado mostrando, de forma separada, información que ayuda a interpretar la recomendación frente a la formación y experiencia declaradas y los requisitos originales disponibles de cada OPEC.
 
-> **Advertencia:** el índice de compatibilidad es una orientación basada en información histórica. No corresponde a una probabilidad de selección, no garantiza superar la Verificación de Requisitos Mínimos (VRM) y no reemplaza la validación oficial de la CNSC.
+> **Advertencia:** el índice de compatibilidad es una orientación basada en información histórica. No es una probabilidad de selección, no garantiza superar la Verificación de Requisitos Mínimos (VRM) y no reemplaza la verificación oficial de la CNSC.
 
-El catálogo utilizado en el prototipo corresponde a información histórica de 2024 y se emplea con fines académicos y demostrativos.
+El catálogo utilizado corresponde a información histórica y se emplea con fines académicos y demostrativos.
+
+## Modelo predictivo aprobado
+
+El prototipo conserva el modelo seleccionado durante la fase experimental del proyecto:
+
+- **Algoritmo:** `HistGradientBoostingClassifier`
+- **Artefacto:** `paquete_modelo_cnsc_v1.joblib`
+- **Umbral aprobado:** `0.720`
+- Se conservan las variables, vectorizadores y transformaciones del modelo aprobado.
+- La capa de presentación ciudadana no reentrena ni modifica el modelo.
+
+### Métricas aprobadas de validación temporal
+
+| Métrica | Resultado |
+|---|---:|
+| Accuracy | 0.7103 |
+| Precision | 0.8187 |
+| Recall — supera VRM | 0.7417 |
+| Recall — no supera VRM | 0.6418 |
+| F1 | 0.7783 |
+| ROC-AUC | 0.7685 |
+| Balanced Accuracy | 0.6917 |
+| Umbral | **0.720** |
+
+Estas métricas corresponden a la evaluación aprobada del modelo y no son recalculadas por la aplicación durante la inferencia.
+
+## Flujo del prototipo
+
+```text
+Perfil del ciudadano
+        ↓
+Modelo predictivo aprobado
+        ↓
+Índice de compatibilidad histórica
+        ↓
+Oportunidades recomendadas
+        ↓
+Consulta de formación, experiencia
+y requisitos originales de la OPEC
+```
+
+El **índice de compatibilidad histórica** constituye la salida del modelo. La información de formación, experiencia y requisitos se presenta como apoyo para la interpretación del ciudadano y no como certificación automática de cumplimiento.
 
 ## Contenido del repositorio
 
-| Archivo | Descripción |
+| Archivo | Función |
 |---|---|
 | `app.py` | Interfaz ciudadana desarrollada en Streamlit |
-| `motor_inferencia.py` | Motor de validación, transformación y generación de recomendaciones |
-| `paquete_modelo_cnsc_v1.joblib` | Modelo predictivo y transformaciones congeladas |
-| `catalogo_opec_prototipo.csv` | Catálogo histórico OPEC usado para la demostración |
-| `catalogo_opec_prototipo.joblib` | Versión serializada del catálogo para inferencia |
-| `metadata_modelo.json` | Versión, alcance, métricas y metadatos del modelo |
+| `motor_inferencia.py` | Preparación de variables e inferencia con el modelo aprobado |
+| `paquete_modelo_cnsc_v1.joblib` | Paquete congelado del modelo, vectorizadores y componentes requeridos |
+| `catalogo_opec_prototipo.joblib` | Catálogo histórico utilizado por el prototipo |
+| `metadata_modelo.json` | Metadatos y especificaciones del modelo |
 | `contrato_entrada.json` | Estructura esperada del perfil ciudadano |
-| `contrato_salida.json` | Estructura de salida del motor de recomendación |
+| `contrato_salida.json` | Estructura de salida del motor |
 | `ejemplo_perfil.json` | Ejemplo de perfil de entrada |
-| `test_motor.py` | Pruebas funcionales del motor con datos nuevos y errores controlados |
-| `requirements.txt` | Dependencias de Python |
-| `ejecutar.bat` | Script de instalación, validación y ejecución para Windows |
-| `Dockerfile` | Definición del contenedor del aplicativo |
-| `.dockerignore` | Exclusiones para construcción del contenedor |
+| `test_motor.py` | Pruebas funcionales del motor |
+| `requirements.txt` | Dependencias necesarias para la ejecución |
+| `ejecutar.bat` | Ejecución local automatizada en Windows |
+| `Dockerfile` | Configuración alternativa mediante contenedor |
+| `.dockerignore` | Exclusiones utilizadas para construir el contenedor |
 
-## Requisitos previos
+## Uso recomendado para revisión académica
 
-- Windows 10/11 para ejecución mediante `ejecutar.bat`.
-- Python 3.11 recomendado.
-- Conexión a internet para la instalación inicial de dependencias.
+Para revisar el resultado funcional no es necesario instalar el proyecto. Se recomienda ingresar directamente a:
 
-## Instalación y ejecución
+**https://proyectomcd-ciudadano-kqhpti4jdjkht2npkkquff.streamlit.app/**
 
-### Opción 1 — Windows
+Flujo sugerido de revisión:
+
+1. Registrar la formación académica del aspirante.
+2. Registrar su experiencia laboral.
+3. Seleccionar **Consultar oportunidades compatibles**.
+4. Revisar el índice de compatibilidad histórica de las oportunidades recomendadas.
+5. Abrir el detalle de una OPEC para contrastar el perfil registrado con sus requisitos originales.
+
+## Ejecución local
+
+Se recomienda **Python 3.11** para reproducir el entorno utilizado durante las pruebas locales.
+
+### Windows
 
 ```bat
 git clone https://github.com/DianaVF2025/proyectoMCD-ciudadano.git
 cd proyectoMCD-ciudadano
+git checkout actualizacion-prototipo-ciudadano
 ejecutar.bat
 ```
 
-El script realiza:
-
-1. Verificación de Python.
-2. Comprobación de archivos requeridos.
-3. Creación del entorno virtual.
-4. Instalación de dependencias.
-5. Ejecución de pruebas funcionales.
-6. Apertura de la interfaz Streamlit en `http://localhost:8501`.
-
-### Opción 2 — Ejecución manual
+### Ejecución manual
 
 ```bash
-git clone https://github.com/DianaVF2025/proyectoMCD-ciudadano.git
-cd proyectoMCD-ciudadano
 python -m venv venv
 ```
 
-Windows:
+En Windows:
 
 ```bat
 venv\Scripts\activate
@@ -77,7 +122,7 @@ python test_motor.py
 streamlit run app.py
 ```
 
-Mac/Linux:
+En macOS/Linux:
 
 ```bash
 source venv/bin/activate
@@ -86,64 +131,27 @@ python test_motor.py
 streamlit run app.py
 ```
 
-## Flujo funcional
+## Alcance y limitaciones
 
-```text
-Perfil del ciudadano
-        │
-        ▼
-Formación académica
-        │
-        ▼
-Experiencia laboral
-        │
-        ▼
-Validación y normalización
-        │
-        ▼
-Comparación con requisitos OPEC
-        │
-        ▼
-Motor predictivo
-        │
-        ▼
-Índice de compatibilidad
-        │
-        ▼
-Ranking de oportunidades laborales
-```
+El prototipo tiene alcance **académico y demostrativo**. Está orientado a apoyar la exploración de oportunidades laborales del sector público colombiano a partir de información histórica.
 
-## Enfoque del prototipo
+La coincidencia textual entre la formación declarada y los requisitos académicos se presenta separadamente del índice histórico. El aplicativo no establece equivalencias académicas propias, no realiza una clasificación automática por NBC y no debe interpretarse como una validación oficial de requisitos.
 
-El aplicativo fue reorientado al ciudadano. El usuario registra su propio perfil y recibe un conjunto ordenado de oportunidades OPEC históricas compatibles. Esta arquitectura reemplaza el enfoque anterior, en el cual una entidad seleccionaba una vacante y el sistema priorizaba candidatos históricos.
+La experiencia registrada por el ciudadano se utiliza como información del perfil. La determinación de si una experiencia es relacionada o específica frente a una OPEC requiere revisar las funciones y condiciones particulares de esa oportunidad.
 
-La recomendación combina información del perfil, requisitos de las OPEC y el componente predictivo. El resultado se presenta como orientación y no como decisión administrativa ni como mecanismo de selección oficial.
+## Reproducibilidad
 
-## Pruebas
+La versión publicada conserva el modelo predictivo aprobado y sus componentes de inferencia. El archivo `requirements.txt` fija las dependencias principales necesarias para reproducir el prototipo.
 
-Antes de iniciar la interfaz, `ejecutar.bat` ejecuta `test_motor.py`. Las pruebas verifican el comportamiento del motor frente a perfiles nuevos y condiciones de error controladas.
-
-Para ejecutarlas manualmente:
+Las pruebas funcionales pueden ejecutarse con:
 
 ```bash
 python test_motor.py
 ```
 
-## Docker
+## Nota institucional
 
-```bash
-docker build -t orientador-cnsc .
-docker run --rm -p 8501:8501 orientador-cnsc
-```
+Este proyecto **no es una herramienta oficial de la Comisión Nacional del Servicio Civil (CNSC)**. Las decisiones sobre admisión, cumplimiento de requisitos, VRM y procesos de selección corresponden exclusivamente a las entidades y procedimientos oficiales aplicables.
 
-La aplicación quedará disponible en:
-
-```text
-http://localhost:8501
-```
-
-## Alcance académico
-
-El prototipo forma parte de un proyecto de Maestría en Ciencia de Datos orientado al análisis y diseño de un modelo predictivo para la recomendación de oportunidades laborales en el sector público colombiano.
-
-La información incluida se utiliza con fines de investigación, validación técnica y demostración académica. El sistema no sustituye los procesos, criterios ni decisiones oficiales de la Comisión Nacional del Servicio Civil (CNSC).
+---
+**Maestría en Ciencia de Datos — Prototipo académico**
