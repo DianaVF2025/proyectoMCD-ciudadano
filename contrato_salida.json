@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ranking orientativo de oportunidades OPEC",
+  "description": "Contrato de salida del motor de recomendación orientado al ciudadano. El índice de compatibilidad es una orientación histórica y no una probabilidad de superar la VRM.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "posicion",
+      "opec",
+      "descripcion",
+      "numero_ruta",
+      "tipo_ruta",
+      "requisito_estudio",
+      "requisito_experiencia",
+      "meses_requeridos",
+      "brecha_meses",
+      "cumple_tiempo",
+      "indice_compatibilidad",
+      "orientacion",
+      "experiencia_ciudadano_meses",
+      "similitud_academica",
+      "similitud_experiencia",
+      "advertencia"
+    ],
+    "properties": {
+      "posicion": {"type": "integer", "minimum": 1},
+      "opec": {"type": ["integer", "string"]},
+      "descripcion": {"type": "string"},
+      "numero_ruta": {"type": ["integer", "number", "string", "null"]},
+      "tipo_ruta": {"type": "string"},
+      "requisito_estudio": {"type": "string"},
+      "requisito_experiencia": {"type": "string"},
+      "meses_requeridos": {"type": "number", "minimum": 0},
+      "brecha_meses": {"type": "number", "minimum": 0},
+      "cumple_tiempo": {"type": ["integer", "boolean"]},
+      "indice_compatibilidad": {"type": "number", "minimum": 0, "maximum": 1},
+      "orientacion": {
+        "type": "string",
+        "enum": ["Mayor compatibilidad histórica", "Revisar requisitos y brechas"]
+      },
+      "experiencia_ciudadano_meses": {"type": "number", "minimum": 0},
+      "similitud_academica": {"type": "number", "minimum": 0, "maximum": 1},
+      "similitud_experiencia": {"type": "number", "minimum": 0, "maximum": 1},
+      "advertencia": {"type": "string"}
+    },
+    "additionalProperties": true
+  }
+}
