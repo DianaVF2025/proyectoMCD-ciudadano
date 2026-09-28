@@ -83,9 +83,63 @@ def coincidencia_componente(c,formaciones):
 
 def coincidencia_directa_titulo(motor,opec,formaciones): return any(coincidencia_componente(c,formaciones) for c in componentes_alternativas(motor,opec))
 
+def niveles_requisito_opec(motor,opec):
+    """Identifica niveles académicos explícitos en todas las rutas de una OPEC.
+
+    Esta función pertenece a la capa funcional de presentación. No modifica
+    variables, vectorizadores, umbral ni salida del modelo aprobado.
+    """
+    patrones = [
+        ("POSTDOCTORADO", 13), ("DOCTORADO", 12), ("MAESTRIA", 11),
+        ("ESPECIALIZACION PROFESIONAL", 10), ("ESPECIALIZACION TECNOLOGICA", 9),
+        ("ESPECIALIZACION TECNICA PROFESIONAL", 8), ("PROFESIONAL", 7),
+        ("TECNOLOGICO", 6), ("TECNICO PROFESIONAL", 5), ("NORMALISTA", 4),
+        ("BACHILLER", 3), ("EDUCACION BASICA SECUNDARIA", 2),
+        ("EDUCACION BASICA PRIMARIA", 1),
+    ]
+    encontrados=set()
+    for c in componentes_alternativas(motor,opec):
+        texto=normalizar_para_coincidencia(c.get("estudio","")).upper()
+        for nombre,jerarquia in patrones:
+            if normalizar_para_coincidencia(nombre).upper() in texto:
+                encontrados.add(jerarquia)
+    return encontrados
+
+def jerarquia_perfil(formaciones):
+    mapa={
+        "EDUCACION BASICA PRIMARIA":1,"EDUCACION BASICA SECUNDARIA":2,
+        "BACHILLER":3,"NORMALISTA":4,"TECNICO PROFESIONAL":5,
+        "TECNOLOGICO":6,"PROFESIONAL":7,"ESPECIALIZACION PROFESIONAL":10,
+        "MAESTRIA":11,"DOCTORADO":12,"POSTDOCTORADO":13,
+    }
+    return max((mapa.get(str(f.get("nivel","")).upper(),0) for f in formaciones),default=0)
+
+def nivel_opec_compatible(motor,opec,formaciones):
+    """Regla funcional inicial solicitada para evitar recomendar a un perfil
+    profesional OPEC cuyo requisito académico sea exclusivamente bachiller.
+
+    Profesional: exige que la OPEC tenga al menos una ruta de nivel profesional
+    (7) o superior. Posgrado: conserva oportunidades profesionales y de
+    posgrado. Los niveles inferiores se mantienen sin una regla nueva hasta
+    validar su tratamiento con los datos y requisitos originales.
+    """
+    nivel=jerarquia_perfil(formaciones)
+    niveles_opec=niveles_requisito_opec(motor,opec)
+    if nivel >= 10:
+        return any(n >= 7 for n in niveles_opec)
+    if nivel == 7:
+        return any(n >= 7 for n in niveles_opec)
+    return True
+
 def aplicar_priorizacion_formacion(resultado,motor,formaciones,top_n):
     if resultado.empty:return resultado
-    df=resultado.copy(); df["coincidencia_titulo_directa"]=df["opec"].apply(lambda x:coincidencia_directa_titulo(motor,x,formaciones)); df=pd.concat([df[df["coincidencia_titulo_directa"]],df[~df["coincidencia_titulo_directa"]]],ignore_index=True).head(top_n).copy(); df["posicion"]=range(1,len(df)+1); return df
+    df=resultado.copy()
+    df["nivel_academico_compatible"]=df["opec"].apply(lambda x:nivel_opec_compatible(motor,x,formaciones))
+    df=df[df["nivel_academico_compatible"]].copy()
+    df["coincidencia_titulo_directa"]=df["opec"].apply(lambda x:coincidencia_directa_titulo(motor,x,formaciones))
+    df=pd.concat([df[df["coincidencia_titulo_directa"]],df[~df["coincidencia_titulo_directa"]]],ignore_index=True).head(top_n).copy()
+    df["posicion"]=range(1,len(df)+1)
+    return df
 
 def mostrar_contraste(motor,opec,formaciones,meses_ciudadano):
     comps=componentes_alternativas(motor,opec); identificados=[c for c in comps if coincidencia_componente(c,formaciones)]; titulos=", ".join(f.get("titulo","") for f in formaciones if f.get("titulo","").strip()) or "No registrada"
