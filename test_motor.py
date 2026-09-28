@@ -161,3 +161,31 @@ print("✓ Perfil sin experiencia procesado correctamente")
 print("✓ Traslapamientos laborales consolidados")
 print("✓ Manejo de perfiles inválidos validado")
 print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
+
+
+# 8. Prueba funcional del filtro de nivel solicitado en la revisión final.
+# Se carga la función de presentación sin ejecutar Streamlit.
+from app import nivel_opec_compatible, aplicar_priorizacion_formacion
+
+perfil_abogado = {
+    "formaciones": [{"nivel": "PROFESIONAL", "titulo": "Derecho"}],
+    "experiencias": [{
+        "cargo": "Abogado",
+        "empresa": "Entidad pública",
+        "funciones": "Asesoría jurídica, elaboración de conceptos y revisión normativa",
+        "tipo": "Profesional",
+        "fecha_inicio": "2021-01-01",
+        "fecha_fin": "2026-01-01",
+    }],
+}
+resultado_abogado_completo = motor.recomendar(perfil_abogado, top_n=len(motor.catalogo))
+resultado_abogado_filtrado = aplicar_priorizacion_formacion(
+    resultado_abogado_completo, motor, perfil_abogado["formaciones"], 100
+)
+assert len(resultado_abogado_filtrado) > 0
+assert resultado_abogado_filtrado["nivel_academico_compatible"].all()
+for opec in resultado_abogado_filtrado["opec"]:
+    assert nivel_opec_compatible(motor, opec, perfil_abogado["formaciones"])
+
+print("✓ Filtro funcional de nivel validado para perfil PROFESIONAL - Derecho")
+print(f"✓ Resultados profesionales revisados: {len(resultado_abogado_filtrado)}")
