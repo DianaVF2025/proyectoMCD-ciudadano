@@ -20,6 +20,31 @@ def normalizar_para_coincidencia(valor):
     texto = "".join(c for c in texto if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", " ", texto).strip()
 
+def extraer_opciones_academicas(motor,nivel):
+    """Construye las opciones del buscador desde los requisitos académicos
+    existentes en el catálogo histórico. No utiliza ni pretende representar
+    el catálogo oficial SNIES.
+    """
+    nivel_norm=normalizar_para_coincidencia(nivel)
+    opciones=set()
+    # Expresiones que suelen separar alternativas dentro del requisito.
+    separadores=re.compile(r"\\s+(?:O|Y/O)\\s+|[;|]",re.IGNORECASE)
+    for opec in motor.catalogo["opec"]:
+        for c in componentes_alternativas(motor,opec):
+            estudio=str(c.get("estudio") or "").strip()
+            if not estudio:
+                continue
+            estudio_norm=normalizar_para_coincidencia(estudio)
+            if nivel_norm not in estudio_norm:
+                continue
+            # Conservamos el texto real de la base como opción; si el requisito
+            # contiene alternativas claramente separadas, se ofrecen por separado.
+            partes=[p.strip(" .,-") for p in separadores.split(estudio) if p.strip(" .,-")]
+            for parte in partes:
+                if nivel_norm in normalizar_para_coincidencia(parte):
+                    opciones.add(parte)
+    return sorted(opciones,key=lambda x:normalizar_para_coincidencia(x))
+
 def nueva_formacion(): return {"nivel": "PROFESIONAL", "titulo": ""}
 def nueva_experiencia(): return {"cargo": "", "empresa": "", "funciones": "", "tipo": "Profesional", "fecha_inicio": "", "fecha_fin": ""}
 
@@ -27,16 +52,32 @@ def inicializar_estado():
     if "formaciones" not in st.session_state: st.session_state.formaciones = [nueva_formacion()]
     if "experiencias" not in st.session_state: st.session_state.experiencias = [nueva_experiencia()]
 
-def render_formaciones():
+def render_formaciones(motor):
     st.markdown("### 🎓 1. Cuéntanos sobre tu formación")
-    st.caption("Registra tu nivel académico y el nombre de tu título o programa. Puedes agregar más de una formación.")
+    st.caption("Selecciona tu nivel y busca una denominación académica disponible en el catálogo histórico del prototipo. Puedes agregar más de una formación.")
     niveles=["BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL","ESPECIALIZACION PROFESIONAL","MAESTRIA","DOCTORADO"]
     for i,f in enumerate(st.session_state.formaciones):
         with st.container(border=True):
             c1,c2=st.columns([1,2]); actual=f.get("nivel","PROFESIONAL")
             f["nivel"]=c1.selectbox("Nivel académico",niveles,index=niveles.index(actual) if actual in niveles else 3,key=f"nivel_{i}")
-            f["titulo"]=c2.text_input("Título o programa académico",value=f.get("titulo",""),placeholder="Ej. Ingeniería Industrial, Matemáticas o Medicina Veterinaria",key=f"titulo_{i}")
+            opciones=extraer_opciones_academicas(motor,f["nivel"])
+            actual_titulo=f.get("titulo","")
+            if actual_titulo and actual_titulo not in opciones: opciones=[actual_titulo]+opciones
+            if opciones:
+                indice=opciones.index(actual_titulo) if actual_titulo in opciones else None
+                f["titulo"]=c2.selectbox(
+                    "Programa o título académico",
+                    opciones,
+                    index=indice,
+                    placeholder="Escribe para buscar una opción...",
+                    key=f"titulo_{i}",
+                    help="Las opciones provienen de los requisitos académicos del catálogo histórico utilizado por el prototipo; no corresponden al catálogo oficial SNIES.",
+                )
+            else:
+                c2.info("No se identificaron denominaciones para este nivel en el catálogo histórico.")
+                f["titulo"]=""
             if len(st.session_state.formaciones)>1 and st.button("Eliminar formación",key=f"del_form_{i}"): st.session_state.formaciones.pop(i); st.rerun()
+    st.caption("Las denominaciones del buscador se extraen del catálogo histórico del prototipo y no constituyen el catálogo oficial del SNIES.")
     if st.button("＋ Agregar otra formación"): st.session_state.formaciones.append(nueva_formacion()); st.rerun()
 
 def render_experiencias():
@@ -212,7 +253,7 @@ def main():
         st.write("Es el índice generado por el modelo predictivo aprobado a partir de patrones históricos y múltiples características del perfil y de las oportunidades. Sirve para orientar la búsqueda; no es una probabilidad de selección ni un porcentaje de cumplimiento de requisitos.")
     with st.sidebar:
         st.header("Acerca del prototipo"); st.write("Proyecto académico de Maestría en Ciencia de Datos."); st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo',motor.metadata.get('modelo_seleccionado','No especificado'))}"); st.write(f"**Versión:** {motor.metadata.get('version',motor.metadata.get('version_modelo','v1'))}"); st.caption("El modelo, sus vectorizadores, variables, umbral y métricas aprobadas permanecen congelados.")
-    st.divider(); render_formaciones(); st.divider(); render_experiencias(); st.divider()
+    st.divider(); render_formaciones(motor); st.divider(); render_experiencias(); st.divider()
     st.markdown("### 🔎 3. Consulta tus oportunidades")
     st.write("El modelo comparará tu perfil con las oportunidades disponibles y las organizará según su **índice de compatibilidad histórica**.")
     top_n=st.slider("Número de oportunidades a mostrar",1,20,10)
