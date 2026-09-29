@@ -163,9 +163,15 @@ print("✓ Manejo de perfiles inválidos validado")
 print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
 
 
-# 8. Prueba funcional del filtro de nivel solicitado en la revisión final.
-# Se carga la función de presentación sin ejecutar Streamlit.
-from app import nivel_opec_compatible, aplicar_priorizacion_formacion
+# 8. Pruebas de regresión de la capa funcional solicitada por la revisión final.
+from app import aplicar_priorizacion_formacion, niveles_empleo_permitidos
+
+metadata_opec = pd.read_csv(BASE / "catalogo_opec_metadata.csv.gz", compression="gzip")
+metadata_opec["opec"] = metadata_opec["opec"].astype(str)
+
+assert len(metadata_opec) == len(motor.catalogo)
+assert metadata_opec["opec"].is_unique
+assert metadata_opec[["convocatoria","nivel","denominacion","grado","asignacion_salarial"]].notna().all().all()
 
 perfil_abogado = {
     "formaciones": [{"nivel": "PROFESIONAL", "titulo": "Derecho"}],
@@ -178,14 +184,51 @@ perfil_abogado = {
         "fecha_fin": "2026-01-01",
     }],
 }
-resultado_abogado_completo = motor.recomendar(perfil_abogado, top_n=len(motor.catalogo))
-resultado_abogado_filtrado = aplicar_priorizacion_formacion(
-    resultado_abogado_completo, motor, perfil_abogado["formaciones"], 100
-)
-assert len(resultado_abogado_filtrado) > 0
-assert resultado_abogado_filtrado["nivel_academico_compatible"].all()
-for opec in resultado_abogado_filtrado["opec"]:
-    assert nivel_opec_compatible(motor, opec, perfil_abogado["formaciones"])
 
-print("✓ Filtro funcional de nivel validado para perfil PROFESIONAL - Derecho")
-print(f"✓ Resultados profesionales revisados: {len(resultado_abogado_filtrado)}")
+resultado_abogado_modelo = motor.recomendar(perfil_abogado, top_n=100)
+salarios = pd.to_numeric(metadata_opec["asignacion_salarial"], errors="coerce")
+resultado_abogado = aplicar_priorizacion_formacion(
+    resultado_abogado_modelo,
+    motor,
+    perfil_abogado["formaciones"],
+    100,
+    metadata_opec,
+    convocatoria="Todas",
+    salario_min=float(salarios.min()),
+    salario_max=float(salarios.max()),
+)
+
+permitidos = niveles_empleo_permitidos(perfil_abogado["formaciones"])
+assert permitidos == {"Profesional", "Asesor"}
+assert len(resultado_abogado) > 0
+assert set(resultado_abogado["nivel"].dropna()).issubset(permitidos)
+assert not resultado_abogado["nivel"].isin(["Asistencial", "Técnico"]).any()
+
+# 9. Un filtro salarial funcional no puede alterar el índice ya calculado.
+if len(resultado_abogado) >= 2:
+    corte = float(pd.to_numeric(resultado_abogado["asignacion_salarial"]).median())
+    filtrado_salario = aplicar_priorizacion_formacion(
+        resultado_abogado_modelo,
+        motor,
+        perfil_abogado["formaciones"],
+        100,
+        metadata_opec,
+        convocatoria="Todas",
+        salario_min=corte,
+        salario_max=float(salarios.max()),
+    )
+    if not filtrado_salario.empty:
+        base_indices = resultado_abogado_modelo.set_index(
+            resultado_abogado_modelo["opec"].astype(str)
+        )["indice_compatibilidad"]
+        for _, fila in filtrado_salario.iterrows():
+            assert abs(
+                float(fila["indice_compatibilidad"])
+                - float(base_indices.loc[str(fila["opec"])])
+            ) < 1e-12
+
+print("✓ Metadatos funcionales validados para las OPEC históricas")
+print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")
+print("✓ No se muestran empleos Asistencial/Técnico al perfil profesional")
+print("✓ Convocatoria y salario operan como filtros posteriores a la inferencia")
+print("✓ El índice de compatibilidad histórica permanece sin modificación")
