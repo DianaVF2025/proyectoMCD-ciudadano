@@ -15,6 +15,14 @@ BASE_DIR = Path(__file__).resolve().parent
 def cargar_motor():
     return MotorRecomendacionCNSC(BASE_DIR / "paquete_modelo_cnsc_v1.joblib")
 
+@st.cache_data
+def cargar_metadata_opec():
+    """Metadatos funcionales restringidos a las OPEC del catálogo histórico."""
+    ruta=BASE_DIR / "catalogo_opec_metadata.csv.gz"
+    df=pd.read_csv(ruta,compression="gzip")
+    df["opec"]=df["opec"].astype(str)
+    return df
+
 def normalizar_para_coincidencia(valor):
     texto = unicodedata.normalize("NFKD", str(valor or "").lower())
     texto = "".join(c for c in texto if not unicodedata.combining(c))
@@ -140,29 +148,6 @@ def coincidencia_componente(c,formaciones):
 
 def coincidencia_directa_titulo(motor,opec,formaciones): return any(coincidencia_componente(c,formaciones) for c in componentes_alternativas(motor,opec))
 
-def niveles_requisito_opec(motor,opec):
-    """Identifica niveles explícitos sin confundir frases contenidas."""
-    patrones=[
-        ("ESPECIALIZACION TECNICA PROFESIONAL",8),
-        ("ESPECIALIZACION TECNOLOGICA",9),
-        ("ESPECIALIZACION PROFESIONAL",10),
-        ("TECNICO PROFESIONAL",5),
-        ("EDUCACION BASICA SECUNDARIA",2),
-        ("EDUCACION BASICA PRIMARIA",1),
-        ("POSTDOCTORADO",13),("DOCTORADO",12),("MAESTRIA",11),
-        ("TECNOLOGICO",6),("NORMALISTA",4),("BACHILLER",3),("PROFESIONAL",7),
-    ]
-    encontrados=set()
-    for c in componentes_alternativas(motor,opec):
-        texto=normalizar_para_coincidencia(c.get("estudio",""))
-        restante=f" {texto} "
-        for nombre,jerarquia in patrones:
-            patron=f" {normalizar_para_coincidencia(nombre)} "
-            if patron in restante:
-                encontrados.add(jerarquia)
-                restante=restante.replace(patron," ")
-    return encontrados
-
 def jerarquia_perfil(formaciones):
     mapa={
         "EDUCACION BASICA PRIMARIA":1,"EDUCACION BASICA SECUNDARIA":2,
@@ -172,30 +157,60 @@ def jerarquia_perfil(formaciones):
     }
     return max((mapa.get(str(f.get("nivel","")).upper(),0) for f in formaciones),default=0)
 
-def nivel_opec_compatible(motor,opec,formaciones):
-    """Regla funcional inicial solicitada para evitar recomendar a un perfil
-    profesional OPEC cuyo requisito académico sea exclusivamente bachiller.
+def niveles_empleo_permitidos(formaciones):
+    """Regla funcional de presentación basada en el nivel estructurado de la OPEC.
 
-    Profesional: exige que la OPEC tenga al menos una ruta de nivel profesional
-    (7) o superior. Posgrado: conserva oportunidades profesionales y de
-    posgrado. Los niveles inferiores se mantienen sin una regla nueva hasta
-    validar su tratamiento con los datos y requisitos originales.
+    No modifica las variables ni la salida del modelo. Evita, por ejemplo, que
+    un perfil profesional reciba como resultado principal empleos asistenciales.
     """
     nivel=jerarquia_perfil(formaciones)
-    niveles_opec=niveles_requisito_opec(motor,opec)
-    if nivel >= 10:
-        return any(n >= 7 for n in niveles_opec)
-    if nivel == 7:
-        return any(n >= 7 for n in niveles_opec)
-    return True
+    if nivel >= 7:
+        return {"Profesional","Asesor"}
+    if nivel in (5,6):
+        return {"Técnico"}
+    if nivel in (1,2,3,4):
+        return {"Asistencial"}
+    return set()
 
-def aplicar_priorizacion_formacion(resultado,motor,formaciones,top_n):
-    if resultado.empty:return resultado
+def enriquecer_resultado(resultado,metadata):
+    if resultado.empty:
+        return resultado.copy()
     df=resultado.copy()
-    df["nivel_academico_compatible"]=df["opec"].apply(lambda x:nivel_opec_compatible(motor,x,formaciones))
-    df=df[df["nivel_academico_compatible"]].copy()
-    df["coincidencia_titulo_directa"]=df["opec"].apply(lambda x:coincidencia_directa_titulo(motor,x,formaciones))
-    df=pd.concat([df[df["coincidencia_titulo_directa"]],df[~df["coincidencia_titulo_directa"]]],ignore_index=True).head(top_n).copy()
+    df["opec"]=df["opec"].astype(str)
+    return df.merge(metadata,on="opec",how="left",validate="many_to_one")
+
+def aplicar_priorizacion_formacion(
+    resultado,motor,formaciones,top_n,metadata,
+    convocatoria="Todas",salario_min=None,salario_max=None
+):
+    """Capa funcional posterior a la inferencia.
+
+    El índice de compatibilidad se conserva exactamente como lo entrega el
+    modelo aprobado. Nivel, convocatoria y salario solo filtran/presentan.
+    """
+    if resultado.empty:
+        return resultado
+    df=enriquecer_resultado(resultado,metadata)
+
+    permitidos=niveles_empleo_permitidos(formaciones)
+    if permitidos:
+        df=df[df["nivel"].isin(permitidos)].copy()
+
+    if convocatoria and convocatoria!="Todas":
+        df=df[df["convocatoria"].eq(convocatoria)].copy()
+
+    if salario_min is not None:
+        df=df[pd.to_numeric(df["asignacion_salarial"],errors="coerce") >= float(salario_min)].copy()
+    if salario_max is not None:
+        df=df[pd.to_numeric(df["asignacion_salarial"],errors="coerce") <= float(salario_max)].copy()
+
+    df["coincidencia_titulo_directa"]=df["opec"].apply(
+        lambda x:coincidencia_directa_titulo(motor,x,formaciones)
+    )
+    df=pd.concat(
+        [df[df["coincidencia_titulo_directa"]],df[~df["coincidencia_titulo_directa"]]],
+        ignore_index=True
+    ).head(top_n).copy()
     df["posicion"]=range(1,len(df)+1)
     return df
 
@@ -246,7 +261,7 @@ def mostrar_resultados(resultado,motor,formaciones):
     if "coincidencia_titulo_directa" not in df: df["coincidencia_titulo_directa"]=False
     cantidad=int(df["coincidencia_titulo_directa"].sum()); st.success(f"Encontramos {len(df)} oportunidades para explorar. En {cantidad} se identificó además coincidencia académica directa en al menos una alternativa registrada.")
     st.info("💡 **Cómo leer tus resultados:** la compatibilidad histórica es el resultado principal del modelo aprobado. El contraste de requisitos te ayuda a interpretar cada oportunidad antes de postularte.")
-    vista=df[["posicion","opec","descripcion","indice_compatibilidad_pct","coincidencia_titulo_directa"]].rename(columns={"posicion":"Posición","opec":"OPEC","descripcion":"Oportunidad","indice_compatibilidad_pct":"Compatibilidad histórica (%)","coincidencia_titulo_directa":"Formación"}); vista["Formación"]=vista["Formación"].map({True:"Coincidencia identificada",False:"Sin coincidencia directa"})
+    vista=df[["posicion","opec","denominacion","nivel","grado","asignacion_salarial","indice_compatibilidad_pct","coincidencia_titulo_directa"]].rename(columns={"posicion":"Posición","opec":"OPEC","denominacion":"Empleo","nivel":"Nivel del empleo","grado":"Grado","asignacion_salarial":"Asignación salarial","indice_compatibilidad_pct":"Compatibilidad histórica (%)","coincidencia_titulo_directa":"Formación"}); vista["Formación"]=vista["Formación"].map({True:"Coincidencia identificada",False:"Sin coincidencia directa"}); vista["Asignación salarial"]=pd.to_numeric(vista["Asignación salarial"],errors="coerce").map(lambda x:f"$ {x:,.0f}" if pd.notna(x) else "No disponible")
     st.markdown("### 🎯 Oportunidades orientadas por compatibilidad"); st.caption("El índice conserva exactamente la salida del modelo predictivo aprobado. No es un porcentaje de cumplimiento de requisitos."); st.dataframe(vista,use_container_width=True,hide_index=True)
     st.markdown("### 📌 Explora cada oportunidad")
     for _,rec in df.iterrows():
@@ -256,13 +271,17 @@ def mostrar_resultados(resultado,motor,formaciones):
                 st.info("El índice es generado por el modelo aprobado a partir de patrones históricos. **No representa porcentaje de cumplimiento ni probabilidad de selección.**")
             with st.expander("ⓘ ¿Qué significa la compatibilidad histórica?"):
                 st.write("El modelo considera conjuntamente múltiples variables históricas del perfil y de la oportunidad. Por ello, una OPEC puede presentar un índice alto sin coincidencia académica directa, mientras otra puede presentar coincidencia académica y un índice menor. El valor final no se atribuye a una sola variable.")
+            st.write(f"**🏛️ Convocatoria:** {rec.get('convocatoria','No disponible')}")
+            st.write(f"**🧩 Nivel del empleo:** {rec.get('nivel','No disponible')} · **Denominación:** {rec.get('denominacion','No disponible')} · **Grado:** {rec.get('grado','No disponible')}")
+            salario=pd.to_numeric(pd.Series([rec.get("asignacion_salarial")]),errors="coerce").iloc[0]
+            st.write(f"**💰 Asignación salarial registrada:** $ {salario:,.0f}" if pd.notna(salario) else "**💰 Asignación salarial registrada:** No disponible")
             st.write(f"**📄 Descripción de la oportunidad:** {rec.get('descripcion','')}")
             mostrar_contraste(motor,rec["opec"],formaciones,float(rec["experiencia_ciudadano_meses"]))
             st.warning("⚠️ **Antes de postularte:** revisa los requisitos completos de la convocatoria. Este contraste es orientativo y no constituye una verificación oficial de cumplimiento.")
             st.caption(rec.get("advertencia",ADVERTENCIA))
 
 def main():
-    inicializar_estado(); motor=cargar_motor()
+    inicializar_estado(); motor=cargar_motor(); metadata=cargar_metadata_opec()
     st.title("🧭 Orientador de oportunidades laborales del sector público")
     st.markdown("#### Encuentra oportunidades con mayor compatibilidad histórica con tu perfil")
     st.write("Registra tu formación y experiencia. El modelo predictivo aprobado analizará tu perfil y organizará las oportunidades OPEC para ayudarte a identificar cuáles explorar primero.")
@@ -272,11 +291,39 @@ def main():
         st.header("Acerca del prototipo"); st.write("Proyecto académico de Maestría en Ciencia de Datos."); st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo',motor.metadata.get('modelo_seleccionado','No especificado'))}"); st.write(f"**Versión:** {motor.metadata.get('version',motor.metadata.get('version_modelo','v1'))}"); st.caption("El modelo, sus vectorizadores, variables, umbral y métricas aprobadas permanecen congelados.")
     st.divider(); render_formaciones(motor); st.divider(); render_experiencias(); st.divider()
     st.markdown("### 🔎 3. Consulta tus oportunidades")
-    st.write("El modelo comparará tu perfil con las oportunidades disponibles y las organizará según su **índice de compatibilidad histórica**.")
+    st.write("El modelo genera el **índice de compatibilidad histórica** y, después, el aplicativo aplica preferencias funcionales sin modificar ese índice.")
+
+    convocatorias=sorted(metadata["convocatoria"].dropna().astype(str).unique().tolist())
+    convocatoria=st.selectbox(
+        "Concurso / convocatoria",
+        ["Todas"]+convocatorias,
+        help="Filtro funcional. No modifica el modelo ni el índice de compatibilidad."
+    )
+
+    salarios=pd.to_numeric(metadata["asignacion_salarial"],errors="coerce").dropna()
+    salario_base=int(salarios.min())
+    salario_tope=int(salarios.max())
+    rango=st.slider(
+        "Rango de asignación salarial registrada",
+        min_value=salario_base,
+        max_value=salario_tope,
+        value=(salario_base,salario_tope),
+        step=100000,
+        format="$ %d",
+        help="Preferencia determinística aplicada después de la inferencia."
+    )
+
     top_n=st.slider("Número de oportunidades a mostrar",1,20,10)
     if st.button("🔎 Consultar oportunidades compatibles",type="primary",use_container_width=True):
         try:
-            perfil=construir_perfil(); resultado_modelo=motor.recomendar(perfil,top_n=len(motor.catalogo)); resultado=aplicar_priorizacion_formacion(resultado_modelo,motor,perfil["formaciones"],top_n); mostrar_resultados(resultado,motor,perfil["formaciones"])
-        except Exception as exc: st.error(f"No fue posible generar la orientación: {exc}")
+            perfil=construir_perfil()
+            resultado_modelo=motor.recomendar(perfil,top_n=100)
+            resultado=aplicar_priorizacion_formacion(
+                resultado_modelo,motor,perfil["formaciones"],top_n,metadata,
+                convocatoria=convocatoria,salario_min=rango[0],salario_max=rango[1]
+            )
+            mostrar_resultados(resultado,motor,perfil["formaciones"])
+        except Exception as exc:
+            st.error(f"No fue posible generar la orientación: {exc}")
 
 if __name__=="__main__": main()
