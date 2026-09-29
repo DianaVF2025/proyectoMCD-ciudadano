@@ -21,29 +21,45 @@ def normalizar_para_coincidencia(valor):
     return re.sub(r"[^a-z0-9]+", " ", texto).strip()
 
 def extraer_opciones_academicas(motor,nivel):
-    """Construye las opciones del buscador desde los requisitos académicos
-    existentes en el catálogo histórico. No utiliza ni pretende representar
-    el catálogo oficial SNIES.
+    """Extrae denominaciones académicas explícitas del catálogo histórico.
+
+    Solo usa valores escritos después de "Disciplina Académica:". No convierte
+    NBC en profesiones ni crea equivalencias académicas.
     """
     nivel_norm=normalizar_para_coincidencia(nivel)
     opciones=set()
-    # Expresiones que suelen separar alternativas dentro del requisito.
-    separadores=re.compile(r"\\s+(?:O|Y/O)\\s+|[;|]",re.IGNORECASE)
+    patron_disciplina=re.compile(
+        r"Disciplina\s+Acad[eé]mica\s*:\s*([^.;]+)",
+        re.IGNORECASE,
+    )
+    separador=re.compile(r"\s*,?\s*(?:,O,|\bO\b|\bY/O\b)\s*",re.IGNORECASE)
+    conectores={"Y","DE","DEL","LA","LAS","EL","LOS","EN","E"}
+
+    def presentar(texto):
+        palabras=[]
+        for p in re.sub(r"\s+"," ",texto.strip(" .,-")).split():
+            palabras.append(p.lower() if p.upper() in conectores else p.capitalize())
+        return " ".join(palabras)
+
     for opec in motor.catalogo["opec"]:
         for c in componentes_alternativas(motor,opec):
             estudio=str(c.get("estudio") or "").strip()
-            if not estudio:
+            if not estudio or nivel_norm not in normalizar_para_coincidencia(estudio):
                 continue
-            estudio_norm=normalizar_para_coincidencia(estudio)
-            if nivel_norm not in estudio_norm:
-                continue
-            # Conservamos el texto real de la base como opción; si el requisito
-            # contiene alternativas claramente separadas, se ofrecen por separado.
-            partes=[p.strip(" .,-") for p in separadores.split(estudio) if p.strip(" .,-")]
-            for parte in partes:
-                if nivel_norm in normalizar_para_coincidencia(parte):
-                    opciones.add(parte)
-    return sorted(opciones,key=lambda x:normalizar_para_coincidencia(x))
+            for bloque in patron_disciplina.findall(estudio):
+                # No se toma texto posterior a un nuevo marcador estructural.
+                bloque=re.split(r"\b(?:NBC|Título\s+de|Experiencia)\s*:",bloque,1,flags=re.IGNORECASE)[0]
+                for parte in separador.split(bloque):
+                    parte=parte.strip(" .,-")
+                    if parte and len(parte)>=3:
+                        opciones.add(presentar(parte))
+
+    # Para bachillerato no se inventa una profesión; se conserva una
+    # denominación funcional mínima que permite registrar el nivel real.
+    if not opciones and nivel_norm=="bachiller":
+        opciones.add("Bachiller")
+
+    return sorted(opciones,key=normalizar_para_coincidencia)
 
 def nueva_formacion(): return {"nivel": "PROFESIONAL", "titulo": ""}
 def nueva_experiencia(): return {"cargo": "", "empresa": "", "funciones": "", "tipo": "Profesional", "fecha_inicio": "", "fecha_fin": ""}
@@ -125,25 +141,26 @@ def coincidencia_componente(c,formaciones):
 def coincidencia_directa_titulo(motor,opec,formaciones): return any(coincidencia_componente(c,formaciones) for c in componentes_alternativas(motor,opec))
 
 def niveles_requisito_opec(motor,opec):
-    """Identifica niveles académicos explícitos en todas las rutas de una OPEC.
-
-    Esta función pertenece a la capa funcional de presentación. No modifica
-    variables, vectorizadores, umbral ni salida del modelo aprobado.
-    """
-    patrones = [
-        ("POSTDOCTORADO", 13), ("DOCTORADO", 12), ("MAESTRIA", 11),
-        ("ESPECIALIZACION PROFESIONAL", 10), ("ESPECIALIZACION TECNOLOGICA", 9),
-        ("ESPECIALIZACION TECNICA PROFESIONAL", 8), ("PROFESIONAL", 7),
-        ("TECNOLOGICO", 6), ("TECNICO PROFESIONAL", 5), ("NORMALISTA", 4),
-        ("BACHILLER", 3), ("EDUCACION BASICA SECUNDARIA", 2),
-        ("EDUCACION BASICA PRIMARIA", 1),
+    """Identifica niveles explícitos sin confundir frases contenidas."""
+    patrones=[
+        ("ESPECIALIZACION TECNICA PROFESIONAL",8),
+        ("ESPECIALIZACION TECNOLOGICA",9),
+        ("ESPECIALIZACION PROFESIONAL",10),
+        ("TECNICO PROFESIONAL",5),
+        ("EDUCACION BASICA SECUNDARIA",2),
+        ("EDUCACION BASICA PRIMARIA",1),
+        ("POSTDOCTORADO",13),("DOCTORADO",12),("MAESTRIA",11),
+        ("TECNOLOGICO",6),("NORMALISTA",4),("BACHILLER",3),("PROFESIONAL",7),
     ]
     encontrados=set()
     for c in componentes_alternativas(motor,opec):
-        texto=normalizar_para_coincidencia(c.get("estudio","")).upper()
+        texto=normalizar_para_coincidencia(c.get("estudio",""))
+        restante=f" {texto} "
         for nombre,jerarquia in patrones:
-            if normalizar_para_coincidencia(nombre).upper() in texto:
+            patron=f" {normalizar_para_coincidencia(nombre)} "
+            if patron in restante:
                 encontrados.add(jerarquia)
+                restante=restante.replace(patron," ")
     return encontrados
 
 def jerarquia_perfil(formaciones):
