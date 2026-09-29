@@ -164,7 +164,7 @@ print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
 
 
 # 8. Pruebas de regresión de la capa funcional solicitada por la revisión final.
-from app import aplicar_priorizacion_formacion, niveles_empleo_permitidos
+from app import aplicar_priorizacion_formacion, niveles_empleo_permitidos, calcular_resultados_completos
 
 metadata_opec = pd.read_csv(BASE / "catalogo_opec_metadata.csv.gz", compression="gzip")
 metadata_opec["opec"] = metadata_opec["opec"].astype(str)
@@ -185,7 +185,7 @@ perfil_abogado = {
     }],
 }
 
-resultado_abogado_modelo = motor.recomendar(perfil_abogado, top_n=100)
+resultado_abogado_modelo = calcular_resultados_completos(motor, perfil_abogado)
 salarios = pd.to_numeric(metadata_opec["asignacion_salarial"], errors="coerce")
 resultado_abogado = aplicar_priorizacion_formacion(
     resultado_abogado_modelo,
@@ -202,7 +202,7 @@ permitidos = niveles_empleo_permitidos(perfil_abogado["formaciones"])
 assert permitidos == {"Profesional", "Asesor"}
 assert len(resultado_abogado) > 0
 assert set(resultado_abogado["nivel"].dropna()).issubset(permitidos)
-assert not resultado_abogado["nivel"].isin(["Asistencial", "Técnico"]).any()
+assert not resultado_abogado["nivel"].isin(["Asistencial", "Técnico"]).any()\nassert resultado_abogado["coincidencia_titulo_directa"].all()\nassert resultado_abogado["opec"].nunique() == len(resultado_abogado)
 
 # 9. Un filtro salarial funcional no puede alterar el índice ya calculado.
 if len(resultado_abogado) >= 2:
@@ -228,7 +228,7 @@ if len(resultado_abogado) >= 2:
             ) < 1e-12
 
 print("✓ Metadatos funcionales validados para las OPEC históricas")
-print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")
+print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")\nprint("✓ Coincidencia académica directa aplicada antes del ranking final")
 print("✓ No se muestran empleos Asistencial/Técnico al perfil profesional")
 print("✓ Convocatoria y salario operan como filtros posteriores a la inferencia")
 print("✓ El índice de compatibilidad histórica permanece sin modificación")
