@@ -28,46 +28,49 @@ def normalizar_para_coincidencia(valor):
     texto = "".join(c for c in texto if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", " ", texto).strip()
 
-def extraer_opciones_academicas(motor,nivel):
-    """Extrae denominaciones académicas explícitas del catálogo histórico.
+SNIES_PROGRAMAS_URL = (
+    "https://www.datos.gov.co/api/views/upr9-nkiz/rows.csv?accessType=DOWNLOAD"
+)
+SNIES_CONSULTA_URL = "https://hecaa.mineducacion.gov.co/consultaspublicas/programas"
 
-    Solo usa valores escritos después de "Disciplina Académica:". No convierte
-    NBC en profesiones ni crea equivalencias académicas.
+@st.cache_data(ttl=86400, show_spinner=False)
+def cargar_programas_snies():
+    """Carga denominaciones de programas desde la fuente pública del MEN/SNIES.
+
+    La fuente se usa únicamente para capturar el nombre declarado por el
+    ciudadano. No crea equivalencias, homologaciones ni modifica el modelo.
     """
-    nivel_norm=normalizar_para_coincidencia(nivel)
-    opciones=set()
-    patron_disciplina=re.compile(
-        r"Disciplina\s+Acad[eé]mica\s*:\s*([^.;]+)",
-        re.IGNORECASE,
+    try:
+        bruto=pd.read_csv(SNIES_PROGRAMAS_URL,low_memory=False)
+    except Exception:
+        return []
+
+    columnas={normalizar_para_coincidencia(c):c for c in bruto.columns}
+    candidatos=[
+        c for n,c in columnas.items()
+        if "programa" in n and any(x in n for x in ("nombre","academ","denomin"))
+    ]
+    if not candidatos:
+        candidatos=[c for n,c in columnas.items() if "programa" in n]
+    if not candidatos:
+        return []
+
+    col_programa=candidatos[0]
+    valores=(
+        bruto[col_programa]
+        .dropna()
+        .astype(str)
+        .str.strip()
     )
-    separador=re.compile(r"\s*,?\s*(?:,O,|\bO\b|\bY/O\b)\s*",re.IGNORECASE)
-    conectores={"Y","DE","DEL","LA","LAS","EL","LOS","EN","E"}
-
-    def presentar(texto):
-        palabras=[]
-        for p in re.sub(r"\s+"," ",texto.strip(" .,-")).split():
-            palabras.append(p.lower() if p.upper() in conectores else p.capitalize())
-        return " ".join(palabras)
-
-    for opec in motor.catalogo["opec"]:
-        for c in componentes_alternativas(motor,opec):
-            estudio=str(c.get("estudio") or "").strip()
-            if not estudio or nivel_norm not in normalizar_para_coincidencia(estudio):
-                continue
-            for bloque in patron_disciplina.findall(estudio):
-                # No se toma texto posterior a un nuevo marcador estructural.
-                bloque=re.split(r"\b(?:NBC|Título\s+de|Experiencia)\s*:",bloque,1,flags=re.IGNORECASE)[0]
-                for parte in separador.split(bloque):
-                    parte=parte.strip(" .,-")
-                    if parte and len(parte)>=3:
-                        opciones.add(presentar(parte))
-
-    # Para bachillerato no se inventa una profesión; se conserva una
-    # denominación funcional mínima que permite registrar el nivel real.
-    if not opciones and nivel_norm=="bachiller":
-        opciones.add("Bachiller")
-
-    return sorted(opciones,key=normalizar_para_coincidencia)
+    valores=valores[valores.ne("")]
+    # Conserva la denominación oficial y elimina duplicados ignorando mayúsculas
+    # y tildes.
+    unicos={}
+    for valor in valores:
+        clave=normalizar_para_coincidencia(valor)
+        if clave and clave not in unicos:
+            unicos[clave]=valor
+    return sorted(unicos.values(),key=normalizar_para_coincidencia)
 
 def nueva_formacion(): return {"nivel": "PROFESIONAL", "titulo": ""}
 def nueva_experiencia(): return {"cargo": "", "empresa": "", "funciones": "", "tipo": "Profesional", "fecha_inicio": "", "fecha_fin": ""}
@@ -76,33 +79,67 @@ def inicializar_estado():
     if "formaciones" not in st.session_state: st.session_state.formaciones = [nueva_formacion()]
     if "experiencias" not in st.session_state: st.session_state.experiencias = [nueva_experiencia()]
 
-def render_formaciones(motor):
+def render_formaciones():
     st.markdown("### 🎓 1. Cuéntanos sobre tu formación")
-    st.caption("Selecciona tu nivel y busca una denominación académica disponible en el catálogo histórico del prototipo. Puedes agregar más de una formación.")
+    st.caption(
+        "Selecciona tu nivel y busca el nombre de tu programa académico. "
+        "El listado se consulta en la fuente pública de programas de educación superior del MEN/SNIES."
+    )
     niveles=["BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL","ESPECIALIZACION PROFESIONAL","MAESTRIA","DOCTORADO"]
+    programas=cargar_programas_snies()
+
     for i,f in enumerate(st.session_state.formaciones):
         with st.container(border=True):
-            c1,c2=st.columns([1,2]); actual=f.get("nivel","PROFESIONAL")
-            f["nivel"]=c1.selectbox("Nivel académico",niveles,index=niveles.index(actual) if actual in niveles else 3,key=f"nivel_{i}")
-            opciones=extraer_opciones_academicas(motor,f["nivel"])
+            c1,c2=st.columns([1,2])
+            actual=f.get("nivel","PROFESIONAL")
+            f["nivel"]=c1.selectbox(
+                "Nivel académico",
+                niveles,
+                index=niveles.index(actual) if actual in niveles else 3,
+                key=f"nivel_{i}"
+            )
+
             actual_titulo=f.get("titulo","")
-            if actual_titulo and actual_titulo not in opciones: opciones=[actual_titulo]+opciones
-            if opciones:
+            if programas:
+                opciones=programas
+                if actual_titulo and actual_titulo not in opciones:
+                    opciones=[actual_titulo]+opciones
                 indice=opciones.index(actual_titulo) if actual_titulo in opciones else None
                 f["titulo"]=c2.selectbox(
-                    "Programa o título académico",
+                    "Programa académico (SNIES)",
                     opciones,
                     index=indice,
-                    placeholder="Escribe para buscar una opción...",
+                    placeholder="Escribe para buscar, por ejemplo: Derecho",
                     key=f"titulo_{i}",
-                    help="Las opciones provienen de los requisitos académicos del catálogo histórico utilizado por el prototipo; no corresponden al catálogo oficial SNIES.",
+                    help=(
+                        "Las denominaciones se cargan desde el conjunto público "
+                        "MEN_PROGRAMAS_DE_EDUCACIÓN_SUPERIOR. La selección no "
+                        "equivale a una validación de requisitos de la OPEC."
+                    ),
                 )
             else:
-                c2.info("No se identificaron denominaciones para este nivel en el catálogo histórico.")
-                f["titulo"]=""
-            if len(st.session_state.formaciones)>1 and st.button("Eliminar formación",key=f"del_form_{i}"): st.session_state.formaciones.pop(i); st.rerun()
-    st.caption("Las denominaciones del buscador se extraen del catálogo histórico del prototipo y no constituyen el catálogo oficial del SNIES.")
-    if st.button("＋ Agregar otra formación"): st.session_state.formaciones.append(nueva_formacion()); st.rerun()
+                c2.warning("No fue posible cargar el catálogo SNIES en este momento.")
+                f["titulo"]=c2.text_input(
+                    "Programa académico",
+                    value=actual_titulo,
+                    placeholder="Escribe la denominación exacta consultada en SNIES",
+                    key=f"titulo_manual_{i}"
+                )
+                st.link_button("Consultar programas en SNIES",SNIES_CONSULTA_URL)
+
+            if len(st.session_state.formaciones)>1 and st.button(
+                "Eliminar formación",key=f"del_form_{i}"
+            ):
+                st.session_state.formaciones.pop(i)
+                st.rerun()
+
+    st.caption(
+        "El SNIES se utiliza únicamente para registrar la denominación del programa. "
+        "El prototipo no crea equivalencias académicas ni certifica cumplimiento."
+    )
+    if st.button("＋ Agregar otra formación"):
+        st.session_state.formaciones.append(nueva_formacion())
+        st.rerun()
 
 def render_experiencias():
     st.markdown("### 💼 2. Cuéntanos sobre tu experiencia")
@@ -179,38 +216,66 @@ def enriquecer_resultado(resultado,metadata):
     df["opec"]=df["opec"].astype(str)
     return df.merge(metadata,on="opec",how="left",validate="many_to_one")
 
+def calcular_resultados_completos(motor,perfil):
+    """Calcula el índice aprobado para las 1.012 OPEC sin truncar a top 100."""
+    X,matriz,detalle,resumen_experiencia=motor.preparar_matriz(perfil)
+    indices=motor.modelo.predict_proba(X)[:,1]
+    resultado=detalle.copy()
+    resultado["indice_compatibilidad"]=indices
+    resultado["orientacion"]=[
+        "Mayor compatibilidad histórica" if x>=motor.umbral
+        else "Revisar requisitos y brechas"
+        for x in indices
+    ]
+    resultado["experiencia_ciudadano_meses"]=resumen_experiencia["meses_experiencia_final"]
+    resultado["similitud_academica"]=matriz["similitud_academica_tfidf_word"].to_numpy()
+    resultado["similitud_experiencia"]=matriz["similitud_experiencia_tfidf_word"].to_numpy()
+    resultado["advertencia"]=ADVERTENCIA
+    return resultado
+
 def aplicar_priorizacion_formacion(
     resultado,motor,formaciones,top_n,metadata,
     convocatoria="Todas",salario_min=None,salario_max=None
 ):
-    """Capa funcional posterior a la inferencia.
+    """Filtra coincidencias académicas directas y luego ordena por índice histórico.
 
-    El índice de compatibilidad se conserva exactamente como lo entrega el
-    modelo aprobado. Nivel, convocatoria y salario solo filtran/presentan.
+    La búsqueda académica se realiza sobre las 1.012 OPEC antes de truncar los
+    resultados. El índice del modelo no se recalcula ni modifica por los filtros.
     """
     if resultado.empty:
         return resultado
+
     df=enriquecer_resultado(resultado,metadata)
 
     permitidos=niveles_empleo_permitidos(formaciones)
     if permitidos:
         df=df[df["nivel"].isin(permitidos)].copy()
 
+    df["coincidencia_titulo_directa"]=df["opec"].apply(
+        lambda x:coincidencia_directa_titulo(motor,x,formaciones)
+    )
+    # La recomendación principal exige coincidencia textual directa con al
+    # menos uno de los programas declarados por el ciudadano.
+    df=df[df["coincidencia_titulo_directa"]].copy()
+
     if convocatoria and convocatoria!="Todas":
         df=df[df["convocatoria"].eq(convocatoria)].copy()
 
     if salario_min is not None:
-        df=df[pd.to_numeric(df["asignacion_salarial"],errors="coerce") >= float(salario_min)].copy()
+        df=df[
+            pd.to_numeric(df["asignacion_salarial"],errors="coerce")
+            >= float(salario_min)
+        ].copy()
     if salario_max is not None:
-        df=df[pd.to_numeric(df["asignacion_salarial"],errors="coerce") <= float(salario_max)].copy()
+        df=df[
+            pd.to_numeric(df["asignacion_salarial"],errors="coerce")
+            <= float(salario_max)
+        ].copy()
 
-    df["coincidencia_titulo_directa"]=df["opec"].apply(
-        lambda x:coincidencia_directa_titulo(motor,x,formaciones)
-    )
-    df=pd.concat(
-        [df[df["coincidencia_titulo_directa"]],df[~df["coincidencia_titulo_directa"]]],
-        ignore_index=True
-    ).head(top_n).copy()
+    df=df.sort_values(
+        ["indice_compatibilidad","brecha_meses"],
+        ascending=[False,True]
+    ).head(top_n).reset_index(drop=True)
     df["posicion"]=range(1,len(df)+1)
     return df
 
@@ -289,9 +354,9 @@ def main():
         st.write("Es el índice generado por el modelo predictivo aprobado a partir de patrones históricos y múltiples características del perfil y de las oportunidades. Sirve para orientar la búsqueda; no es una probabilidad de selección ni un porcentaje de cumplimiento de requisitos.")
     with st.sidebar:
         st.header("Acerca del prototipo"); st.write("Proyecto académico de Maestría en Ciencia de Datos."); st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo',motor.metadata.get('modelo_seleccionado','No especificado'))}"); st.write(f"**Versión:** {motor.metadata.get('version',motor.metadata.get('version_modelo','v1'))}"); st.caption("El modelo, sus vectorizadores, variables, umbral y métricas aprobadas permanecen congelados.")
-    st.divider(); render_formaciones(motor); st.divider(); render_experiencias(); st.divider()
+    st.divider(); render_formaciones(); st.divider(); render_experiencias(); st.divider()
     st.markdown("### 🔎 3. Consulta tus oportunidades")
-    st.write("El modelo genera el **índice de compatibilidad histórica** y, después, el aplicativo aplica preferencias funcionales sin modificar ese índice.")
+    st.write("El aplicativo busca primero las OPEC con coincidencia textual directa con el programa seleccionado y nivel compatible. Luego las organiza según el **índice de compatibilidad histórica** del modelo aprobado.")
 
     convocatorias=sorted(metadata["convocatoria"].dropna().astype(str).unique().tolist())
     convocatoria=st.selectbox(
@@ -317,7 +382,7 @@ def main():
     if st.button("🔎 Consultar oportunidades compatibles",type="primary",use_container_width=True):
         try:
             perfil=construir_perfil()
-            resultado_modelo=motor.recomendar(perfil,top_n=100)
+            resultado_modelo=calcular_resultados_completos(motor,perfil)
             resultado=aplicar_priorizacion_formacion(
                 resultado_modelo,motor,perfil["formaciones"],top_n,metadata,
                 convocatoria=convocatoria,salario_min=rango[0],salario_max=rango[1]
