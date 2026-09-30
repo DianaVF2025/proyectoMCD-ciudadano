@@ -107,8 +107,12 @@ def render_formaciones():
             actual_titulo=f.get("titulo","")
             if programas:
                 opciones=programas
-                if actual_titulo and actual_titulo not in opciones:
-                    opciones=[actual_titulo]+opciones
+                # Si la sesión conserva un valor antiguo que no pertenece al
+                # catálogo SNIES actual (p. ej. una ciudad cargada por la versión
+                # previa), se descarta en lugar de volver a insertarlo.
+                if actual_titulo not in opciones:
+                    actual_titulo=""
+                    f["titulo"]=""
                 indice=opciones.index(actual_titulo) if actual_titulo in opciones else None
                 f["titulo"]=c2.selectbox(
                     "Programa académico (SNIES)",
