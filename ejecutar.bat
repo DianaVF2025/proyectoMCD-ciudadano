@@ -28,7 +28,7 @@ exit /b 1
 
 :python_ok
 echo [1/5] Verificando archivos...
-for %%F in (app.py motor_inferencia.py paquete_modelo_cnsc_v1.joblib requirements.txt) do (
+for %%F in (app.py motor_inferencia.py paquete_modelo_cnsc_v1.joblib catalogo_opec_metadata.csv.gz catalogo_programas_selector.csv.gz requirements.txt) do (
     if not exist "%%F" (
         echo [ERROR] Falta %%F
         pause
