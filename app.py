@@ -29,7 +29,8 @@ def normalizar_para_coincidencia(valor):
     return re.sub(r"[^a-z0-9]+", " ", texto).strip()
 
 SNIES_PROGRAMAS_URL = (
-    "https://www.datos.gov.co/api/views/upr9-nkiz/rows.csv?accessType=DOWNLOAD"
+    "https://www.datos.gov.co/resource/upr9-nkiz.csv?"
+    "$select=nombreprograma&$where=nombreprograma%20is%20not%20null&$limit=50000"
 )
 SNIES_CONSULTA_URL = "https://hecaa.mineducacion.gov.co/consultaspublicas/programas"
 
@@ -49,16 +50,10 @@ def cargar_programas_snies():
     # programa (departamento, municipio, código, etc.). Debe usarse
     # específicamente 'nombreprograma'; seleccionar por coincidencia amplia
     # puede devolver ciudades o departamentos.
+    # La consulta Socrata solicita exclusivamente la columna oficial
+    # 'nombreprograma'. Esto evita cargar por error departamento o municipio.
     columnas={normalizar_para_coincidencia(c):c for c in bruto.columns}
     col_programa=columnas.get("nombreprograma")
-    if not col_programa:
-        # Compatibilidad defensiva si el portal cambia solo el formato visual
-        # del encabezado, pero conserva su significado.
-        exactos=[
-            c for n,c in columnas.items()
-            if n in {"nombre programa","nombre del programa","programa academico"}
-        ]
-        col_programa=exactos[0] if exactos else None
     if not col_programa:
         return []
     valores=(
