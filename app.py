@@ -33,7 +33,7 @@ def normalizar_para_coincidencia(valor):
 def cargar_catalogo_programas():
     """Carga el catálogo local validado derivado de Programas.xlsx."""
     ruta=BASE_DIR / "catalogo_programas_selector.csv"
-    df=pd.read_csv(ruta,compression="gzip")
+    df=pd.read_csv(ruta,low_memory=False)
     requeridas={"nombre_programa","nivel_prototipo"}
     if not requeridas.issubset(df.columns):
         raise ValueError("El catálogo académico local no contiene las columnas esperadas.")
