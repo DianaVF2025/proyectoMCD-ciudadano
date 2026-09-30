@@ -28,27 +28,30 @@ def normalizar_para_coincidencia(valor):
     texto = "".join(c for c in texto if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", " ", texto).strip()
 
-SNIES_PROGRAMAS_URL = (
-    "https://www.datos.gov.co/resource/2p93-tnnf.csv?"
-    "%24select=nombreprograma&"
-    "%24where=nombreprograma%20is%20not%20null&"
-    "%24limit=50000"
-)
-SNIES_CONSULTA_URL = "https://hecaa.mineducacion.gov.co/consultaspublicas/programas"
+@st.cache_data
+def cargar_catalogo_programas():
+    """Carga el catálogo local validado derivado de Programas.xlsx."""
+    ruta=BASE_DIR / "catalogo_programas_selector.csv.gz"
+    df=pd.read_csv(ruta,compression="gzip")
+    requeridas={"nombre_programa","nivel_prototipo"}
+    if not requeridas.issubset(df.columns):
+        raise ValueError("El catálogo académico local no contiene las columnas esperadas.")
+    df["nombre_programa"]=df["nombre_programa"].fillna("").astype(str).str.strip()
+    df["nivel_prototipo"]=df["nivel_prototipo"].fillna("").astype(str).str.strip()
+    return df
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def cargar_programas_snies():
-    """Carga solo la columna oficial nombreprograma del conjunto MEN/SNIES."""
-    try:
-        df=pd.read_csv(SNIES_PROGRAMAS_URL,low_memory=False)
-    except Exception:
-        return []
-    if "nombreprograma" not in df.columns:
-        return []
-    valores=df["nombreprograma"].dropna().astype(str).str.strip()
-    valores=valores[valores.ne("")]
+def opciones_programa_por_nivel(catalogo,nivel):
+    if nivel=="BACHILLER":
+        return ["Bachiller"]
+    opciones=(
+        catalogo.loc[catalogo["nivel_prototipo"].eq(nivel),"nombre_programa"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    opciones=opciones[opciones.ne("")]
     unicos={}
-    for valor in valores:
+    for valor in opciones:
         clave=normalizar_para_coincidencia(valor)
         if clave and clave not in unicos:
             unicos[clave]=valor
@@ -64,14 +67,14 @@ def inicializar_estado():
 def render_formaciones():
     st.markdown("### 🎓 1. Cuéntanos sobre tu formación")
     st.caption(
-        "Selecciona tu nivel y busca tu programa académico en el listado "
-        "público de programas de educación superior del MEN/SNIES."
+        "Selecciona tu nivel y busca tu programa académico. "
+        "El listado se carga desde un catálogo local validado de programas."
     )
     niveles=[
         "BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL",
         "ESPECIALIZACION PROFESIONAL","MAESTRIA","DOCTORADO"
     ]
-    programas=cargar_programas_snies()
+    catalogo=cargar_catalogo_programas()
 
     for i,f in enumerate(st.session_state.formaciones):
         with st.container(border=True):
@@ -84,41 +87,29 @@ def render_formaciones():
                 key=f"nivel_{i}"
             )
 
+            opciones=opciones_programa_por_nivel(catalogo,f["nivel"])
             actual_titulo=f.get("titulo","")
-            if f["nivel"]=="BACHILLER":
-                opciones=["Bachiller"]
-            else:
-                opciones=programas
+            if actual_titulo not in opciones:
+                actual_titulo=""
+                f["titulo"]=""
 
             if opciones:
-                if actual_titulo not in opciones:
-                    actual_titulo=""
-                    f["titulo"]=""
                 indice=opciones.index(actual_titulo) if actual_titulo in opciones else None
                 f["titulo"]=c2.selectbox(
-                    "Programa académico (SNIES)",
+                    "Programa académico",
                     opciones,
                     index=indice,
                     placeholder="Escribe para buscar, por ejemplo: Derecho",
                     key=f"titulo_{i}",
                     help=(
-                        "La denominación se consulta en el conjunto público "
-                        "PROGRAMAS DE EDUCACIÓN SUPERIOR del MEN/SNIES. "
-                        "La selección no certifica cumplimiento de una OPEC."
+                        "El programa se selecciona desde el catálogo local derivado "
+                        "de Programas.xlsx. La selección no certifica cumplimiento "
+                        "de los requisitos de una OPEC."
                     ),
                 )
             else:
-                c2.warning(
-                    "No fue posible consultar el listado SNIES en este momento. "
-                    "Puedes registrar manualmente la denominación exacta."
-                )
-                f["titulo"]=c2.text_input(
-                    "Programa académico",
-                    value=actual_titulo,
-                    placeholder="Ejemplo: Derecho",
-                    key=f"titulo_manual_{i}"
-                )
-                st.link_button("Consultar programas en SNIES",SNIES_CONSULTA_URL)
+                c2.info("No se identificaron programas para este nivel.")
+                f["titulo"]=""
 
             if len(st.session_state.formaciones)>1 and st.button(
                 "Eliminar formación",key=f"del_form_{i}"
@@ -127,9 +118,9 @@ def render_formaciones():
                 st.rerun()
 
     st.caption(
-        "El nombre del programa se usa para buscar coincidencias textuales en "
-        "los requisitos académicos de las OPEC. No se crean equivalencias ni "
-        "homologaciones automáticas."
+        "El programa seleccionado se utiliza para buscar coincidencias textuales "
+        "en los requisitos académicos de las OPEC. No se crean equivalencias "
+        "ni homologaciones automáticas."
     )
     if st.button("＋ Agregar otra formación"):
         st.session_state.formaciones.append(nueva_formacion())
