@@ -163,23 +163,34 @@ print("✓ Manejo de perfiles inválidos validado")
 print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
 
 
-# 8. Validaciones estáticas de la capa funcional sin importar Streamlit.
-# Esto evita ejecutar decoradores/cache de Streamlit en modo bare durante test_motor.py.
+# 8. Validaciones estáticas y de datos de la capa funcional.
 import ast
 
 app_source = (BASE / "app.py").read_text(encoding="utf-8")
 ast.parse(app_source)
 
-assert "2p93-tnnf" in app_source
-assert "nombreprograma" in app_source
+catalogo_programas = pd.read_csv(
+    BASE / "catalogo_programas_selector.csv.gz",
+    compression="gzip"
+)
+assert {"nombre_programa","nivel_prototipo"}.issubset(catalogo_programas.columns)
+assert len(catalogo_programas) > 0
+assert (
+    catalogo_programas.loc[
+        catalogo_programas["nivel_prototipo"].eq("PROFESIONAL"),
+        "nombre_programa"
+    ].astype(str).str.strip().str.upper().eq("DERECHO").any()
+)
+
+assert "catalogo_programas_selector.csv.gz" in app_source
 assert "coincidencia_titulo_directa" in app_source
 assert "niveles_empleo_permitidos" in app_source
 assert "convocatoria" in app_source
 assert "asignacion_salarial" in app_source
 assert "calcular_resultados_completos" in app_source
-assert "catalogo_programas_snies.csv.gz" not in app_source
 
 print("✓ Sintaxis de app.py validada")
-print("✓ Selector académico configurado sobre nombres de programa MEN/SNIES")
+print("✓ Catálogo local de programas leído correctamente")
+print("✓ DERECHO disponible en el nivel PROFESIONAL")
 print("✓ Capa funcional conserva coincidencia académica, nivel, convocatoria y salario")
-print("✓ test_motor.py no importa Streamlit ni ejecuta su caché en modo bare")
+print("✓ test_motor.py no importa ni ejecuta Streamlit")
