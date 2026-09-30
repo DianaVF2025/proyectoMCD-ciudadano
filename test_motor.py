@@ -164,7 +164,11 @@ print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
 
 
 # 8. Pruebas de regresión de la capa funcional solicitada por la revisión final.
-from app import (\n    aplicar_priorizacion_formacion, niveles_empleo_permitidos,\n    calcular_resultados_completos, cargar_catalogo_programas,\n    opciones_programa_por_nivel,\n)
+from app import (
+    aplicar_priorizacion_formacion, niveles_empleo_permitidos,
+    calcular_resultados_completos, cargar_catalogo_programas,
+    opciones_programa_por_nivel,
+)
 
 catalogo_programas = cargar_catalogo_programas()
 assert len(catalogo_programas) > 0
@@ -246,7 +250,9 @@ if len(resultado_abogado) >= 2:
                 - float(base_indices.loc[str(fila["opec"])])
             ) < 1e-12
 
-print("✓ Catálogo local de programas validado por nivel académico")\nprint("✓ DERECHO disponible en el nivel PROFESIONAL")\nprint("✓ Metadatos funcionales validados para las OPEC históricas")
+print("✓ Catálogo local de programas validado por nivel académico")
+print("✓ DERECHO disponible en el nivel PROFESIONAL")
+print("✓ Metadatos funcionales validados para las OPEC históricas")
 print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")
 print("✓ Coincidencia académica directa aplicada antes del ranking final")
 print("✓ No se muestran empleos Asistencial/Técnico al perfil profesional")
