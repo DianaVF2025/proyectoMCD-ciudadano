@@ -45,17 +45,22 @@ def cargar_programas_snies():
     except Exception:
         return []
 
+    # El conjunto oficial contiene varias columnas relacionadas con el
+    # programa (departamento, municipio, código, etc.). Debe usarse
+    # específicamente 'nombreprograma'; seleccionar por coincidencia amplia
+    # puede devolver ciudades o departamentos.
     columnas={normalizar_para_coincidencia(c):c for c in bruto.columns}
-    candidatos=[
-        c for n,c in columnas.items()
-        if "programa" in n and any(x in n for x in ("nombre","academ","denomin"))
-    ]
-    if not candidatos:
-        candidatos=[c for n,c in columnas.items() if "programa" in n]
-    if not candidatos:
+    col_programa=columnas.get("nombreprograma")
+    if not col_programa:
+        # Compatibilidad defensiva si el portal cambia solo el formato visual
+        # del encabezado, pero conserva su significado.
+        exactos=[
+            c for n,c in columnas.items()
+            if n in {"nombre programa","nombre del programa","programa academico"}
+        ]
+        col_programa=exactos[0] if exactos else None
+    if not col_programa:
         return []
-
-    col_programa=candidatos[0]
     valores=(
         bruto[col_programa]
         .dropna()
