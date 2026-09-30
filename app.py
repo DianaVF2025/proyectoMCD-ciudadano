@@ -19,7 +19,7 @@ def cargar_motor():
 def cargar_metadata_opec():
     """Metadatos funcionales restringidos a las OPEC del catálogo histórico."""
     ruta=BASE_DIR / "catalogo_opec_metadata.csv.gz"
-    df=pd.read_csv(ruta,compression="gzip")
+    df=pd.read_csv(ruta,low_memory=False)
     df["opec"]=df["opec"].astype(str)
     return df
 
@@ -31,7 +31,7 @@ def normalizar_para_coincidencia(valor):
 @st.cache_data
 def cargar_catalogo_programas():
     """Carga el catálogo local validado derivado de Programas.xlsx."""
-    ruta=BASE_DIR / "catalogo_programas_selector.csv.gz"
+    ruta=BASE_DIR / "catalogo_programas_selector.csv"
     df=pd.read_csv(ruta,compression="gzip")
     requeridas={"nombre_programa","nivel_prototipo"}
     if not requeridas.issubset(df.columns):
@@ -68,7 +68,7 @@ def render_formaciones():
     st.markdown("### 🎓 1. Cuéntanos sobre tu formación")
     st.caption(
         "Selecciona tu nivel y busca tu programa académico. "
-        "El listado se carga desde un catálogo local validado de programas."
+        "El listado se carga desde el catálogo local validado de programas académicos."
     )
     niveles=[
         "BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL",
