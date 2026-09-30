@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from motor_inferencia import MotorRecomendacionCNSC, ADVERTENCIA
+from reglas_funcionales import niveles_empleo_permitidos
 
 st.set_page_config(page_title="Orientador de oportunidades laborales públicas", page_icon="🧭", layout="wide")
 BASE_DIR = Path(__file__).resolve().parent
@@ -169,30 +170,6 @@ def coincidencia_componente(c,formaciones):
     return any((t:=normalizar_para_coincidencia(f.get("titulo",""))) and t in req for f in formaciones)
 
 def coincidencia_directa_titulo(motor,opec,formaciones): return any(coincidencia_componente(c,formaciones) for c in componentes_alternativas(motor,opec))
-
-def jerarquia_perfil(formaciones):
-    mapa={
-        "EDUCACION BASICA PRIMARIA":1,"EDUCACION BASICA SECUNDARIA":2,
-        "BACHILLER":3,"NORMALISTA":4,"TECNICO PROFESIONAL":5,
-        "TECNOLOGICO":6,"PROFESIONAL":7,"ESPECIALIZACION PROFESIONAL":10,
-        "MAESTRIA":11,"DOCTORADO":12,"POSTDOCTORADO":13,
-    }
-    return max((mapa.get(str(f.get("nivel","")).upper(),0) for f in formaciones),default=0)
-
-def niveles_empleo_permitidos(formaciones):
-    """Regla funcional de presentación basada en el nivel estructurado de la OPEC.
-
-    No modifica las variables ni la salida del modelo. Evita, por ejemplo, que
-    un perfil profesional reciba como resultado principal empleos asistenciales.
-    """
-    nivel=jerarquia_perfil(formaciones)
-    if nivel >= 7:
-        return {"Profesional","Asesor"}
-    if nivel in (5,6):
-        return {"Técnico"}
-    if nivel in (1,2,3,4):
-        return {"Asistencial"}
-    return set()
 
 def enriquecer_resultado(resultado,metadata):
     if resultado.empty:
