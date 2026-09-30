@@ -261,6 +261,7 @@ assert "datos.gov.co" not in app_source
 assert "niveles_empleo_permitidos" in app_source
 assert "coincidencia_titulo_directa" in app_source
 assert "convocatoria" in app_source
+assert "Concurso / proceso de selección" in app_source
 assert "asignacion_salarial" in app_source
 assert "calcular_resultados_completos" in app_source
 
