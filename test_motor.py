@@ -202,7 +202,9 @@ permitidos = niveles_empleo_permitidos(perfil_abogado["formaciones"])
 assert permitidos == {"Profesional", "Asesor"}
 assert len(resultado_abogado) > 0
 assert set(resultado_abogado["nivel"].dropna()).issubset(permitidos)
-assert not resultado_abogado["nivel"].isin(["Asistencial", "Técnico"]).any()\nassert resultado_abogado["coincidencia_titulo_directa"].all()\nassert resultado_abogado["opec"].nunique() == len(resultado_abogado)
+assert not resultado_abogado["nivel"].isin(["Asistencial", "Técnico"]).any()
+assert resultado_abogado["coincidencia_titulo_directa"].all()
+assert resultado_abogado["opec"].nunique() == len(resultado_abogado)
 
 # 9. Un filtro salarial funcional no puede alterar el índice ya calculado.
 if len(resultado_abogado) >= 2:
