@@ -230,7 +230,8 @@ if len(resultado_abogado) >= 2:
             ) < 1e-12
 
 print("✓ Metadatos funcionales validados para las OPEC históricas")
-print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")\nprint("✓ Coincidencia académica directa aplicada antes del ranking final")
+print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")
+print("✓ Coincidencia académica directa aplicada antes del ranking final")
 print("✓ No se muestran empleos Asistencial/Técnico al perfil profesional")
 print("✓ Convocatoria y salario operan como filtros posteriores a la inferencia")
 print("✓ El índice de compatibilidad histórica permanece sin modificación")
