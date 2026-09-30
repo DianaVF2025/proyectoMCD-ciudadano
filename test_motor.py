@@ -164,7 +164,24 @@ print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
 
 
 # 8. Pruebas de regresión de la capa funcional solicitada por la revisión final.
-from app import aplicar_priorizacion_formacion, niveles_empleo_permitidos, calcular_resultados_completos
+from app import (\n    aplicar_priorizacion_formacion, niveles_empleo_permitidos,\n    calcular_resultados_completos, cargar_catalogo_programas,\n    opciones_programa_por_nivel,\n)
+
+catalogo_programas = cargar_catalogo_programas()
+assert len(catalogo_programas) > 0
+assert {
+    "nombre_programa","nivel_academico_snies",
+    "nivel_formacion_snies","nivel_prototipo"
+}.issubset(catalogo_programas.columns)
+
+programas_profesionales = opciones_programa_por_nivel(
+    catalogo_programas, "PROFESIONAL"
+)
+programas_maestria = opciones_programa_por_nivel(
+    catalogo_programas, "MAESTRIA"
+)
+assert any(str(x).strip().upper()=="DERECHO" for x in programas_profesionales)
+assert len(programas_maestria) > 0
+assert opciones_programa_por_nivel(catalogo_programas, "BACHILLER") == ["Bachiller"]
 
 metadata_opec = pd.read_csv(BASE / "catalogo_opec_metadata.csv.gz", compression="gzip")
 metadata_opec["opec"] = metadata_opec["opec"].astype(str)
@@ -229,7 +246,7 @@ if len(resultado_abogado) >= 2:
                 - float(base_indices.loc[str(fila["opec"])])
             ) < 1e-12
 
-print("✓ Metadatos funcionales validados para las OPEC históricas")
+print("✓ Catálogo local de programas validado por nivel académico")\nprint("✓ DERECHO disponible en el nivel PROFESIONAL")\nprint("✓ Metadatos funcionales validados para las OPEC históricas")
 print("✓ Perfil PROFESIONAL restringido a niveles Profesional/Asesor")
 print("✓ Coincidencia académica directa aplicada antes del ranking final")
 print("✓ No se muestran empleos Asistencial/Técnico al perfil profesional")
