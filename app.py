@@ -69,7 +69,7 @@ def render_formaciones():
     st.markdown("### 🎓 1. Cuéntanos sobre tu formación")
     st.caption(
         "Selecciona tu nivel y busca tu programa académico. "
-        "El listado se carga desde el catálogo local validado de programas académicos."
+        "El listado se carga desde un catálogo local de programas académicos derivado de la información del SNIES."
     )
     niveles=[
         "BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL",
