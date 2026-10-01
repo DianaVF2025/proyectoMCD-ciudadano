@@ -4,31 +4,57 @@
 **Proyecto:** *Realizar un análisis y diseño de un modelo predictivo para la recomendación de oportunidades laborales en el ámbito gubernamental*  
 **Autores:** Diana Vásquez · Germán Mahecha
 
-## Prototipo desplegado
+## Prototipo
+
+Este repositorio contiene la versión final del prototipo ciudadano para orientar la exploración de oportunidades laborales OPEC del sector público colombiano.
 
 **Aplicación web:** https://proyectomcd-ciudadano-kqhpti4jdjkht2npkkquff.streamlit.app/
 
-El prototipo está publicado en Streamlit Community Cloud y puede utilizarse directamente desde el navegador, sin instalación local.
-
-## Descripción
-
-Este repositorio contiene un prototipo orientado al **ciudadano/aspirante**. El usuario registra información básica de su formación académica y experiencia laboral y recibe oportunidades OPEC históricas ordenadas mediante un **índice de compatibilidad histórica** generado por el modelo predictivo aprobado.
-
-La interfaz complementa ese resultado mostrando, de forma separada, información que ayuda a interpretar la recomendación frente a la formación y experiencia declaradas y los requisitos originales disponibles de cada OPEC.
+El usuario registra su formación académica y experiencia laboral. El sistema conserva la salida del modelo predictivo aprobado como **índice de compatibilidad histórica** y, posteriormente, aplica una capa funcional de presentación para ayudar a interpretar las oportunidades disponibles.
 
 > **Advertencia:** el índice de compatibilidad es una orientación basada en información histórica. No es una probabilidad de selección, no garantiza superar la Verificación de Requisitos Mínimos (VRM) y no reemplaza la verificación oficial de la CNSC.
 
-El catálogo utilizado corresponde a información histórica y se emplea con fines académicos y demostrativos.
+## Ajustes funcionales finales
+
+La versión final incorpora los ajustes solicitados durante la revisión académica:
+
+1. **Nivel académico y nivel del empleo**
+   - Bachiller → oportunidades de nivel Asistencial.
+   - Técnico profesional / Tecnológico → oportunidades de nivel Técnico.
+   - Profesional → oportunidades de nivel Profesional / Asesor.
+   - Especialización, Maestría o Doctorado → oportunidades de nivel Profesional / Asesor.
+   - La capa funcional evita que un perfil profesional sea priorizado con OPEC de nivel Asistencial o Técnico.
+
+2. **Buscador académico basado en información del SNIES**
+   - El selector utiliza un catálogo local de programas académicos derivado de información del SNIES.
+   - La búsqueda se realiza por nombre de programa.
+   - No se crean equivalencias académicas ni homologaciones automáticas.
+
+3. **Concurso / proceso de selección**
+   - Cada resultado muestra el concurso o proceso de selección asociado a la OPEC.
+   - También puede utilizarse como filtro funcional.
+
+4. **Rango salarial**
+   - El usuario puede seleccionar un rango de asignación salarial.
+   - Este filtro se aplica después de la inferencia y **no modifica el modelo ni el índice de compatibilidad histórica**.
+
+5. **Pruebas funcionales por nivel**
+   - PF-01: Bachiller / Asistencial.
+   - PF-02: Tecnológico / Técnico.
+   - PF-03: Profesional.
+   - PF-04: Profesional especializado / Posgrado.
+   - PF-05: Profesional + Especialización + Maestría.
 
 ## Modelo predictivo aprobado
 
-El prototipo conserva el modelo seleccionado durante la fase experimental del proyecto:
+El prototipo conserva sin modificación el modelo seleccionado durante la fase experimental:
 
 - **Algoritmo:** `HistGradientBoostingClassifier`
+- **Representación textual:** TF-IDF
 - **Artefacto:** `paquete_modelo_cnsc_v1.joblib`
 - **Umbral aprobado:** `0.720`
-- Se conservan las variables, vectorizadores y transformaciones del modelo aprobado.
-- La capa de presentación ciudadana no reentrena ni modifica el modelo.
+- Se mantienen congeladas las variables, vectorizadores y transformaciones del modelo.
+- No se realiza entrenamiento, ajuste de hiperparámetros ni SMOTE durante la ejecución del prototipo.
 
 ### Métricas aprobadas de validación temporal
 
@@ -43,69 +69,90 @@ El prototipo conserva el modelo seleccionado durante la fase experimental del pr
 | Balanced Accuracy | 0.6917 |
 | Umbral | **0.720** |
 
-Estas métricas corresponden a la evaluación aprobada del modelo y no son recalculadas por la aplicación durante la inferencia.
+Estas métricas corresponden a la evaluación aprobada del modelo y no son recalculadas ni sustituidas por la aplicación.
 
-## Flujo del prototipo
+## Arquitectura funcional
 
 ```text
-Perfil del ciudadano
-        ↓
-Modelo predictivo aprobado
-        ↓
+Perfil ciudadano
+      ↓
+Formación académica + experiencia
+      ↓
+MODELO PREDICTIVO APROBADO
+(HistGradientBoosting + TF-IDF)
+      ↓
 Índice de compatibilidad histórica
-        ↓
-Oportunidades recomendadas
-        ↓
-Consulta de formación, experiencia
-y requisitos originales de la OPEC
+      ↓
+Capa funcional de presentación
+      ├── coincidencia textual académica
+      ├── nivel del empleo
+      ├── concurso / proceso de selección
+      ├── rango salarial
+      └── contraste informativo de requisitos
+      ↓
+Oportunidades para explorar
 ```
 
-El **índice de compatibilidad histórica** constituye la salida del modelo. La información de formación, experiencia y requisitos se presenta como apoyo para la interpretación del ciudadano y no como certificación automática de cumplimiento.
+La capa funcional **no altera la salida del modelo**. Su finalidad es organizar y presentar la información de manera coherente para el ciudadano.
 
-## Contenido del repositorio
+## Pruebas funcionales finales
+
+| Prueba | Perfil utilizado | Resultado esperado |
+|---|---|---|
+| PF-01 | Bachiller | Solo nivel Asistencial |
+| PF-02 | Tecnología en Administración de Empresas | Solo nivel Técnico |
+| PF-03 | Profesional en Ingeniería Industrial | Nivel Profesional / Asesor |
+| PF-04 | Profesional + Especialización | Nivel Profesional / Asesor, incluyendo oportunidades especializadas cuando corresponda |
+| PF-05 | Derecho + Especialización + Maestría | Nivel Profesional / Asesor con contraste de requisitos de posgrado |
+
+Las pruebas verifican además que:
+
+- el catálogo académico se carga correctamente;
+- programas como **DERECHO** están disponibles en el nivel Profesional;
+- el concurso/proceso de selección se muestra en los resultados;
+- el salario funciona como filtro posterior a la inferencia;
+- un perfil profesional no habilita oportunidades Asistenciales o Técnicas;
+- el índice histórico conserva exactamente la salida del modelo aprobado.
+
+## Contenido principal del repositorio
 
 | Archivo | Función |
 |---|---|
 | `app.py` | Interfaz ciudadana desarrollada en Streamlit |
-| `motor_inferencia.py` | Preparación de variables e inferencia con el modelo aprobado |
-| `paquete_modelo_cnsc_v1.joblib` | Paquete congelado del modelo, vectorizadores y componentes requeridos |
-| `catalogo_opec_prototipo.joblib` | Catálogo histórico utilizado por el prototipo |
+| `motor_inferencia.py` | Preparación de variables e inferencia del modelo aprobado |
+| `reglas_funcionales.py` | Reglas de presentación por nivel académico/empleo |
+| `paquete_modelo_cnsc_v1.joblib` | Modelo, vectorizadores y componentes congelados |
+| `catalogo_opec_prototipo.joblib` | Catálogo histórico de OPEC utilizado por el prototipo |
+| `catalogo_opec_metadata.csv.gz` | Nivel, convocatoria, salario, denominación y grado de las OPEC históricas |
+| `catalogo_programas_selector.csv` | Catálogo local de programas académicos derivado de información SNIES |
 | `metadata_modelo.json` | Metadatos y especificaciones del modelo |
 | `contrato_entrada.json` | Estructura esperada del perfil ciudadano |
 | `contrato_salida.json` | Estructura de salida del motor |
-| `ejemplo_perfil.json` | Ejemplo de perfil de entrada |
-| `test_motor.py` | Pruebas funcionales del motor |
-| `requirements.txt` | Dependencias necesarias para la ejecución |
-| `ejecutar.bat` | Ejecución local automatizada en Windows |
+| `ejemplo_perfil.json` | Ejemplo de perfil |
+| `test_motor.py` | Pruebas del motor y de la capa funcional |
+| `requirements.txt` | Dependencias del proyecto |
+| `ejecutar.bat` | Validación y ejecución automatizada en Windows |
 | `Dockerfile` | Configuración alternativa mediante contenedor |
-| `.dockerignore` | Exclusiones utilizadas para construir el contenedor |
-
-## Uso recomendado para revisión académica
-
-Para revisar el resultado funcional no es necesario instalar el proyecto. Se recomienda ingresar directamente a:
-
-**https://proyectomcd-ciudadano-kqhpti4jdjkht2npkkquff.streamlit.app/**
-
-Flujo sugerido de revisión:
-
-1. Registrar la formación académica del aspirante.
-2. Registrar su experiencia laboral.
-3. Seleccionar **Consultar oportunidades compatibles**.
-4. Revisar el índice de compatibilidad histórica de las oportunidades recomendadas.
-5. Abrir el detalle de una OPEC para contrastar el perfil registrado con sus requisitos originales.
 
 ## Ejecución local
 
-Se recomienda **Python 3.11** para reproducir el entorno utilizado durante las pruebas locales.
+Se recomienda **Python 3.11**.
 
 ### Windows
 
 ```bat
 git clone https://github.com/DianaVF2025/proyectoMCD-ciudadano.git
 cd proyectoMCD-ciudadano
-git checkout actualizacion-prototipo-ciudadano
 ejecutar.bat
 ```
+
+El archivo `ejecutar.bat`:
+
+1. verifica los archivos necesarios;
+2. prepara el entorno virtual;
+3. instala las dependencias;
+4. ejecuta las pruebas funcionales;
+5. inicia la interfaz Streamlit.
 
 ### Ejecución manual
 
@@ -131,27 +178,27 @@ python test_motor.py
 streamlit run app.py
 ```
 
+## Interpretación de resultados
+
+La **compatibilidad histórica** es el resultado principal del modelo aprobado.
+
+La coincidencia académica presentada en la interfaz corresponde a una **coincidencia textual directa** entre el programa declarado y los requisitos registrados de la OPEC. No representa una certificación de cumplimiento académico.
+
+La experiencia se muestra como apoyo para comparar el tiempo registrado por el ciudadano con el tiempo indicado en la oportunidad. Cuando la OPEC exige experiencia relacionada o específica, deben revisarse además las funciones y demás condiciones.
+
 ## Alcance y limitaciones
 
-El prototipo tiene alcance **académico y demostrativo**. Está orientado a apoyar la exploración de oportunidades laborales del sector público colombiano a partir de información histórica.
-
-La coincidencia textual entre la formación declarada y los requisitos académicos se presenta separadamente del índice histórico. El aplicativo no establece equivalencias académicas propias, no realiza una clasificación automática por NBC y no debe interpretarse como una validación oficial de requisitos.
-
-La experiencia registrada por el ciudadano se utiliza como información del perfil. La determinación de si una experiencia es relacionada o específica frente a una OPEC requiere revisar las funciones y condiciones particulares de esa oportunidad.
-
-## Reproducibilidad
-
-La versión publicada conserva el modelo predictivo aprobado y sus componentes de inferencia. El archivo `requirements.txt` fija las dependencias principales necesarias para reproducir el prototipo.
-
-Las pruebas funcionales pueden ejecutarse con:
-
-```bash
-python test_motor.py
-```
+- Prototipo de alcance académico y demostrativo.
+- Utiliza un catálogo histórico de OPEC.
+- No determina admisión ni elegibilidad.
+- No certifica cumplimiento de requisitos mínimos.
+- No establece equivalencias académicas propias.
+- No realiza clasificación automática por NBC.
+- No sustituye los procesos, plataformas ni decisiones oficiales de la CNSC.
 
 ## Nota institucional
 
-Este proyecto **no es una herramienta oficial de la Comisión Nacional del Servicio Civil (CNSC)**. Las decisiones sobre admisión, cumplimiento de requisitos, VRM y procesos de selección corresponden exclusivamente a las entidades y procedimientos oficiales aplicables.
+Este proyecto **no es una herramienta oficial de la Comisión Nacional del Servicio Civil (CNSC)**. Las decisiones sobre admisión, VRM y procesos de selección corresponden exclusivamente a las entidades y procedimientos oficiales aplicables.
 
 ---
 **Maestría en Ciencia de Datos — Prototipo académico**

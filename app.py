@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from motor_inferencia import MotorRecomendacionCNSC, ADVERTENCIA
+from reglas_funcionales import niveles_empleo_permitidos
 
 st.set_page_config(page_title="Orientador de oportunidades laborales públicas", page_icon="🧭", layout="wide")
 BASE_DIR = Path(__file__).resolve().parent
@@ -15,10 +16,47 @@ BASE_DIR = Path(__file__).resolve().parent
 def cargar_motor():
     return MotorRecomendacionCNSC(BASE_DIR / "paquete_modelo_cnsc_v1.joblib")
 
+@st.cache_data
+def cargar_metadata_opec():
+    """Metadatos funcionales restringidos a las OPEC del catálogo histórico."""
+    ruta=BASE_DIR / "catalogo_opec_metadata.csv.gz"
+    df=pd.read_csv(ruta,low_memory=False)
+    df["opec"]=df["opec"].astype(str)
+    return df
+
 def normalizar_para_coincidencia(valor):
     texto = unicodedata.normalize("NFKD", str(valor or "").lower())
     texto = "".join(c for c in texto if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", " ", texto).strip()
+
+@st.cache_data
+def cargar_catalogo_programas():
+    """Carga el catálogo local validado derivado de Programas.xlsx."""
+    ruta=BASE_DIR / "catalogo_programas_selector.csv"
+    df=pd.read_csv(ruta,low_memory=False)
+    requeridas={"nombre_programa","nivel_prototipo"}
+    if not requeridas.issubset(df.columns):
+        raise ValueError("El catálogo académico local no contiene las columnas esperadas.")
+    df["nombre_programa"]=df["nombre_programa"].fillna("").astype(str).str.strip()
+    df["nivel_prototipo"]=df["nivel_prototipo"].fillna("").astype(str).str.strip()
+    return df
+
+def opciones_programa_por_nivel(catalogo,nivel):
+    if nivel=="BACHILLER":
+        return ["Bachiller"]
+    opciones=(
+        catalogo.loc[catalogo["nivel_prototipo"].eq(nivel),"nombre_programa"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    opciones=opciones[opciones.ne("")]
+    unicos={}
+    for valor in opciones:
+        clave=normalizar_para_coincidencia(valor)
+        if clave and clave not in unicos:
+            unicos[clave]=valor
+    return sorted(unicos.values(),key=normalizar_para_coincidencia)
 
 def nueva_formacion(): return {"nivel": "PROFESIONAL", "titulo": ""}
 def nueva_experiencia(): return {"cargo": "", "empresa": "", "funciones": "", "tipo": "Profesional", "fecha_inicio": "", "fecha_fin": ""}
@@ -29,15 +67,65 @@ def inicializar_estado():
 
 def render_formaciones():
     st.markdown("### 🎓 1. Cuéntanos sobre tu formación")
-    st.caption("Registra tu nivel académico y el nombre de tu título o programa. Puedes agregar más de una formación.")
-    niveles=["BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL","ESPECIALIZACION PROFESIONAL","MAESTRIA","DOCTORADO"]
+    st.caption(
+        "Selecciona tu nivel y busca tu programa académico. "
+        "El listado se carga desde un catálogo local de programas académicos derivado de la información del SNIES."
+    )
+    niveles=[
+        "BACHILLER","TECNICO PROFESIONAL","TECNOLOGICO","PROFESIONAL",
+        "ESPECIALIZACION PROFESIONAL","MAESTRIA","DOCTORADO"
+    ]
+    catalogo=cargar_catalogo_programas()
+
     for i,f in enumerate(st.session_state.formaciones):
         with st.container(border=True):
-            c1,c2=st.columns([1,2]); actual=f.get("nivel","PROFESIONAL")
-            f["nivel"]=c1.selectbox("Nivel académico",niveles,index=niveles.index(actual) if actual in niveles else 3,key=f"nivel_{i}")
-            f["titulo"]=c2.text_input("Título o programa académico",value=f.get("titulo",""),placeholder="Ej. Ingeniería Industrial, Matemáticas o Medicina Veterinaria",key=f"titulo_{i}")
-            if len(st.session_state.formaciones)>1 and st.button("Eliminar formación",key=f"del_form_{i}"): st.session_state.formaciones.pop(i); st.rerun()
-    if st.button("＋ Agregar otra formación"): st.session_state.formaciones.append(nueva_formacion()); st.rerun()
+            c1,c2=st.columns([1,2])
+            actual=f.get("nivel","PROFESIONAL")
+            f["nivel"]=c1.selectbox(
+                "Nivel académico",
+                niveles,
+                index=niveles.index(actual) if actual in niveles else 3,
+                key=f"nivel_{i}"
+            )
+
+            opciones=opciones_programa_por_nivel(catalogo,f["nivel"])
+            actual_titulo=f.get("titulo","")
+            if actual_titulo not in opciones:
+                actual_titulo=""
+                f["titulo"]=""
+
+            if opciones:
+                indice=opciones.index(actual_titulo) if actual_titulo in opciones else None
+                f["titulo"]=c2.selectbox(
+                    "Programa académico",
+                    opciones,
+                    index=indice,
+                    placeholder="Escribe para buscar, por ejemplo: Derecho",
+                    key=f"titulo_{i}",
+                    help=(
+                        "El programa se selecciona desde el catálogo local derivado "
+                        "de Programas.xlsx. La selección no certifica cumplimiento "
+                        "de los requisitos de una OPEC."
+                    ),
+                )
+            else:
+                c2.info("No se identificaron programas para este nivel.")
+                f["titulo"]=""
+
+            if len(st.session_state.formaciones)>1 and st.button(
+                "Eliminar formación",key=f"del_form_{i}"
+            ):
+                st.session_state.formaciones.pop(i)
+                st.rerun()
+
+    st.caption(
+        "El programa seleccionado se utiliza para buscar coincidencias textuales "
+        "en los requisitos académicos de las OPEC. No se crean equivalencias "
+        "ni homologaciones automáticas."
+    )
+    if st.button("＋ Agregar otra formación"):
+        st.session_state.formaciones.append(nueva_formacion())
+        st.rerun()
 
 def render_experiencias():
     st.markdown("### 💼 2. Cuéntanos sobre tu experiencia")
@@ -83,9 +171,75 @@ def coincidencia_componente(c,formaciones):
 
 def coincidencia_directa_titulo(motor,opec,formaciones): return any(coincidencia_componente(c,formaciones) for c in componentes_alternativas(motor,opec))
 
-def aplicar_priorizacion_formacion(resultado,motor,formaciones,top_n):
-    if resultado.empty:return resultado
-    df=resultado.copy(); df["coincidencia_titulo_directa"]=df["opec"].apply(lambda x:coincidencia_directa_titulo(motor,x,formaciones)); df=pd.concat([df[df["coincidencia_titulo_directa"]],df[~df["coincidencia_titulo_directa"]]],ignore_index=True).head(top_n).copy(); df["posicion"]=range(1,len(df)+1); return df
+def enriquecer_resultado(resultado,metadata):
+    if resultado.empty:
+        return resultado.copy()
+    df=resultado.copy()
+    df["opec"]=df["opec"].astype(str)
+    return df.merge(metadata,on="opec",how="left",validate="many_to_one")
+
+def calcular_resultados_completos(motor,perfil):
+    """Calcula el índice aprobado para las 1.012 OPEC sin truncar a top 100."""
+    X,matriz,detalle,resumen_experiencia=motor.preparar_matriz(perfil)
+    indices=motor.modelo.predict_proba(X)[:,1]
+    resultado=detalle.copy()
+    resultado["indice_compatibilidad"]=indices
+    resultado["orientacion"]=[
+        "Mayor compatibilidad histórica" if x>=motor.umbral
+        else "Revisar requisitos y brechas"
+        for x in indices
+    ]
+    resultado["experiencia_ciudadano_meses"]=resumen_experiencia["meses_experiencia_final"]
+    resultado["similitud_academica"]=matriz["similitud_academica_tfidf_word"].to_numpy()
+    resultado["similitud_experiencia"]=matriz["similitud_experiencia_tfidf_word"].to_numpy()
+    resultado["advertencia"]=ADVERTENCIA
+    return resultado
+
+def aplicar_priorizacion_formacion(
+    resultado,motor,formaciones,top_n,metadata,
+    convocatoria="Todas",salario_min=None,salario_max=None
+):
+    """Filtra coincidencias académicas directas y luego ordena por índice histórico.
+
+    La búsqueda académica se realiza sobre las 1.012 OPEC antes de truncar los
+    resultados. El índice del modelo no se recalcula ni modifica por los filtros.
+    """
+    if resultado.empty:
+        return resultado
+
+    df=enriquecer_resultado(resultado,metadata)
+
+    permitidos=niveles_empleo_permitidos(formaciones)
+    if permitidos:
+        df=df[df["nivel"].isin(permitidos)].copy()
+
+    df["coincidencia_titulo_directa"]=df["opec"].apply(
+        lambda x:coincidencia_directa_titulo(motor,x,formaciones)
+    )
+    # La recomendación principal exige coincidencia textual directa con al
+    # menos uno de los programas declarados por el ciudadano.
+    df=df[df["coincidencia_titulo_directa"]].copy()
+
+    if convocatoria and convocatoria!="Todas":
+        df=df[df["convocatoria"].eq(convocatoria)].copy()
+
+    if salario_min is not None:
+        df=df[
+            pd.to_numeric(df["asignacion_salarial"],errors="coerce")
+            >= float(salario_min)
+        ].copy()
+    if salario_max is not None:
+        df=df[
+            pd.to_numeric(df["asignacion_salarial"],errors="coerce")
+            <= float(salario_max)
+        ].copy()
+
+    df=df.sort_values(
+        ["indice_compatibilidad","brecha_meses"],
+        ascending=[False,True]
+    ).head(top_n).reset_index(drop=True)
+    df["posicion"]=range(1,len(df)+1)
+    return df
 
 def mostrar_contraste(motor,opec,formaciones,meses_ciudadano):
     comps=componentes_alternativas(motor,opec); identificados=[c for c in comps if coincidencia_componente(c,formaciones)]; titulos=", ".join(f.get("titulo","") for f in formaciones if f.get("titulo","").strip()) or "No registrada"
@@ -134,7 +288,7 @@ def mostrar_resultados(resultado,motor,formaciones):
     if "coincidencia_titulo_directa" not in df: df["coincidencia_titulo_directa"]=False
     cantidad=int(df["coincidencia_titulo_directa"].sum()); st.success(f"Encontramos {len(df)} oportunidades para explorar. En {cantidad} se identificó además coincidencia académica directa en al menos una alternativa registrada.")
     st.info("💡 **Cómo leer tus resultados:** la compatibilidad histórica es el resultado principal del modelo aprobado. El contraste de requisitos te ayuda a interpretar cada oportunidad antes de postularte.")
-    vista=df[["posicion","opec","descripcion","indice_compatibilidad_pct","coincidencia_titulo_directa"]].rename(columns={"posicion":"Posición","opec":"OPEC","descripcion":"Oportunidad","indice_compatibilidad_pct":"Compatibilidad histórica (%)","coincidencia_titulo_directa":"Formación"}); vista["Formación"]=vista["Formación"].map({True:"Coincidencia identificada",False:"Sin coincidencia directa"})
+    vista=df[["posicion","opec","denominacion","nivel","grado","convocatoria","asignacion_salarial","indice_compatibilidad_pct","coincidencia_titulo_directa"]].rename(columns={"posicion":"Posición","opec":"OPEC","denominacion":"Empleo","nivel":"Nivel del empleo","grado":"Grado","convocatoria":"Concurso / proceso de selección","asignacion_salarial":"Asignación salarial","indice_compatibilidad_pct":"Compatibilidad histórica (%)","coincidencia_titulo_directa":"Formación"}); vista["Formación"]=vista["Formación"].map({True:"Coincidencia identificada",False:"Sin coincidencia directa"}); vista["Asignación salarial"]=pd.to_numeric(vista["Asignación salarial"],errors="coerce").map(lambda x:f"$ {x:,.0f}" if pd.notna(x) else "No disponible")
     st.markdown("### 🎯 Oportunidades orientadas por compatibilidad"); st.caption("El índice conserva exactamente la salida del modelo predictivo aprobado. No es un porcentaje de cumplimiento de requisitos."); st.dataframe(vista,use_container_width=True,hide_index=True)
     st.markdown("### 📌 Explora cada oportunidad")
     for _,rec in df.iterrows():
@@ -144,13 +298,17 @@ def mostrar_resultados(resultado,motor,formaciones):
                 st.info("El índice es generado por el modelo aprobado a partir de patrones históricos. **No representa porcentaje de cumplimiento ni probabilidad de selección.**")
             with st.expander("ⓘ ¿Qué significa la compatibilidad histórica?"):
                 st.write("El modelo considera conjuntamente múltiples variables históricas del perfil y de la oportunidad. Por ello, una OPEC puede presentar un índice alto sin coincidencia académica directa, mientras otra puede presentar coincidencia académica y un índice menor. El valor final no se atribuye a una sola variable.")
+            st.write(f"**🏛️ Convocatoria:** {rec.get('convocatoria','No disponible')}")
+            st.write(f"**🧩 Nivel del empleo:** {rec.get('nivel','No disponible')} · **Denominación:** {rec.get('denominacion','No disponible')} · **Grado:** {rec.get('grado','No disponible')}")
+            salario=pd.to_numeric(pd.Series([rec.get("asignacion_salarial")]),errors="coerce").iloc[0]
+            st.write(f"**💰 Asignación salarial registrada:** $ {salario:,.0f}" if pd.notna(salario) else "**💰 Asignación salarial registrada:** No disponible")
             st.write(f"**📄 Descripción de la oportunidad:** {rec.get('descripcion','')}")
             mostrar_contraste(motor,rec["opec"],formaciones,float(rec["experiencia_ciudadano_meses"]))
             st.warning("⚠️ **Antes de postularte:** revisa los requisitos completos de la convocatoria. Este contraste es orientativo y no constituye una verificación oficial de cumplimiento.")
             st.caption(rec.get("advertencia",ADVERTENCIA))
 
 def main():
-    inicializar_estado(); motor=cargar_motor()
+    inicializar_estado(); motor=cargar_motor(); metadata=cargar_metadata_opec()
     st.title("🧭 Orientador de oportunidades laborales del sector público")
     st.markdown("#### Encuentra oportunidades con mayor compatibilidad histórica con tu perfil")
     st.write("Registra tu formación y experiencia. El modelo predictivo aprobado analizará tu perfil y organizará las oportunidades OPEC para ayudarte a identificar cuáles explorar primero.")
@@ -160,11 +318,39 @@ def main():
         st.header("Acerca del prototipo"); st.write("Proyecto académico de Maestría en Ciencia de Datos."); st.write(f"**Modelo:** {motor.metadata.get('nombre_modelo',motor.metadata.get('modelo_seleccionado','No especificado'))}"); st.write(f"**Versión:** {motor.metadata.get('version',motor.metadata.get('version_modelo','v1'))}"); st.caption("El modelo, sus vectorizadores, variables, umbral y métricas aprobadas permanecen congelados.")
     st.divider(); render_formaciones(); st.divider(); render_experiencias(); st.divider()
     st.markdown("### 🔎 3. Consulta tus oportunidades")
-    st.write("El modelo comparará tu perfil con las oportunidades disponibles y las organizará según su **índice de compatibilidad histórica**.")
+    st.write("El aplicativo busca primero las OPEC con coincidencia textual directa con el programa seleccionado y nivel compatible. Luego las organiza según el **índice de compatibilidad histórica** del modelo aprobado.")
+
+    convocatorias=sorted(metadata["convocatoria"].dropna().astype(str).unique().tolist())
+    convocatoria=st.selectbox(
+        "Concurso / convocatoria",
+        ["Todas"]+convocatorias,
+        help="Filtro funcional. No modifica el modelo ni el índice de compatibilidad."
+    )
+
+    salarios=pd.to_numeric(metadata["asignacion_salarial"],errors="coerce").dropna()
+    salario_base=int(salarios.min())
+    salario_tope=int(salarios.max())
+    rango=st.slider(
+        "Rango de asignación salarial registrada",
+        min_value=salario_base,
+        max_value=salario_tope,
+        value=(salario_base,salario_tope),
+        step=100000,
+        format="$ %d",
+        help="Preferencia determinística aplicada después de la inferencia."
+    )
+
     top_n=st.slider("Número de oportunidades a mostrar",1,20,10)
     if st.button("🔎 Consultar oportunidades compatibles",type="primary",use_container_width=True):
         try:
-            perfil=construir_perfil(); resultado_modelo=motor.recomendar(perfil,top_n=len(motor.catalogo)); resultado=aplicar_priorizacion_formacion(resultado_modelo,motor,perfil["formaciones"],top_n); mostrar_resultados(resultado,motor,perfil["formaciones"])
-        except Exception as exc: st.error(f"No fue posible generar la orientación: {exc}")
+            perfil=construir_perfil()
+            resultado_modelo=calcular_resultados_completos(motor,perfil)
+            resultado=aplicar_priorizacion_formacion(
+                resultado_modelo,motor,perfil["formaciones"],top_n,metadata,
+                convocatoria=convocatoria,salario_min=rango[0],salario_max=rango[1]
+            )
+            mostrar_resultados(resultado,motor,perfil["formaciones"])
+        except Exception as exc:
+            st.error(f"No fue posible generar la orientación: {exc}")
 
 if __name__=="__main__": main()

@@ -161,3 +161,117 @@ print("✓ Perfil sin experiencia procesado correctamente")
 print("✓ Traslapamientos laborales consolidados")
 print("✓ Manejo de perfiles inválidos validado")
 print("✓ Sin entrenamiento, ajuste ni SMOTE en producción")
+
+
+# 8. Validaciones funcionales solicitadas por la tutora.
+import ast
+from reglas_funcionales import niveles_empleo_permitidos
+
+app_source = (BASE / "app.py").read_text(encoding="utf-8")
+ast.parse(app_source)
+
+# 8.1 Catálogo académico local: CSV normal, sin compresión.
+catalogo_programas = pd.read_csv(
+    BASE / "catalogo_programas_selector.csv",
+    low_memory=False,
+)
+assert {
+    "nombre_programa",
+    "nivel_academico_snies",
+    "nivel_formacion_snies",
+    "nivel_prototipo",
+}.issubset(catalogo_programas.columns)
+assert len(catalogo_programas) > 6000
+assert (
+    catalogo_programas.loc[
+        catalogo_programas["nivel_prototipo"].eq("PROFESIONAL"),
+        "nombre_programa",
+    ]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+    .eq("DERECHO")
+    .any()
+)
+
+# 8.2 Metadatos de las 1.012 OPEC históricas.
+metadata_opec = pd.read_csv(
+    BASE / "catalogo_opec_metadata.csv.gz",
+    compression="gzip",
+)
+metadata_opec["opec"] = metadata_opec["opec"].astype(str)
+assert len(metadata_opec) == len(motor.catalogo)
+assert metadata_opec["opec"].is_unique
+assert metadata_opec[
+    ["convocatoria", "nivel", "denominacion", "grado", "asignacion_salarial"]
+].notna().all().all()
+
+# 8.3 Pruebas funcionales explícitas de nivel.
+casos_nivel = {
+    "ASISTENCIAL": (
+        [{"nivel": "BACHILLER", "titulo": "Bachiller"}],
+        {"Asistencial"},
+    ),
+    "TECNICO": (
+        [{"nivel": "TECNICO PROFESIONAL", "titulo": "Técnico Profesional"}],
+        {"Técnico"},
+    ),
+    "PROFESIONAL": (
+        [{"nivel": "PROFESIONAL", "titulo": "Derecho"}],
+        {"Profesional", "Asesor"},
+    ),
+    "PROFESIONAL_ESPECIALIZADO_POSGRADO": (
+        [
+            {"nivel": "PROFESIONAL", "titulo": "Derecho"},
+            {
+                "nivel": "ESPECIALIZACION PROFESIONAL",
+                "titulo": "Especialización en Derecho Administrativo",
+            },
+        ],
+        {"Profesional", "Asesor"},
+    ),
+}
+
+for nombre_caso, (formaciones, esperado) in casos_nivel.items():
+    obtenido = niveles_empleo_permitidos(formaciones)
+    assert obtenido == esperado, f"{nombre_caso}: {obtenido} != {esperado}"
+
+# 8.4 El caso profesional nunca habilita Asistencial ni Técnico.
+permitidos_profesional = niveles_empleo_permitidos(
+    [{"nivel": "PROFESIONAL", "titulo": "Derecho"}]
+)
+assert "Asistencial" not in permitidos_profesional
+assert "Técnico" not in permitidos_profesional
+assert permitidos_profesional == {"Profesional", "Asesor"}
+
+# 8.5 El caso posgrado conserva la orientación a Profesional/Asesor.
+permitidos_posgrado = niveles_empleo_permitidos([
+    {"nivel": "PROFESIONAL", "titulo": "Derecho"},
+    {
+        "nivel": "ESPECIALIZACION PROFESIONAL",
+        "titulo": "Especialización en Derecho Administrativo",
+    },
+])
+assert permitidos_posgrado == {"Profesional", "Asesor"}
+
+# 8.6 Validaciones de integración de la interfaz.
+assert "catalogo_programas_selector.csv" in app_source
+assert "catalogo_programas_selector.csv.gz" not in app_source
+assert "datos.gov.co" not in app_source
+assert "niveles_empleo_permitidos" in app_source
+assert "coincidencia_titulo_directa" in app_source
+assert "convocatoria" in app_source
+assert "Concurso / proceso de selección" in app_source
+assert "asignacion_salarial" in app_source
+assert "calcular_resultados_completos" in app_source
+
+print("✓ Sintaxis de app.py validada")
+print("✓ Catálogo local leído correctamente desde CSV")
+print("✓ DERECHO disponible en el nivel PROFESIONAL")
+print("✓ Caso ASISTENCIAL: nivel permitido = Asistencial")
+print("✓ Caso TECNICO: nivel permitido = Técnico")
+print("✓ Caso PROFESIONAL: niveles permitidos = Profesional/Asesor")
+print("✓ Caso POSGRADO: niveles permitidos = Profesional/Asesor")
+print("✓ Perfil profesional no habilita OPEC Asistencial/Técnico")
+print("✓ Concurso y salario están integrados como filtros funcionales")
+print("✓ El modelo aprobado, su umbral y sus métricas no fueron modificados")
